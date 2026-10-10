@@ -1135,16 +1135,42 @@ function download(blob, name) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 120000);
 }
+// 浏览器会把过大的 WebGL 绘制缓冲悄悄缩小（Chrome 约 3300 万像素），整图直接渲染会只剩左下角，所以分块渲染再拼到 2D 画布
+const OUT_MAX_SIDE = 16384, OUT_MAX_AREA = 16384 * 16384;
+const cropBitmap = (bmp, x, y, w, h) =>
+  createImageBitmap(bmp, x, y, w, h, { premultiplyAlpha: 'none' }).catch(() => createImageBitmap(bmp, x, y, w, h));
 async function renderFullRes(file, lut, type) {
   if (!exportR) exportR = new LutRenderer(document.createElement('canvas'));
   let bmp = await decode(file), shrunk = false;
-  if (Math.max(bmp.width, bmp.height) > exportR.maxSize) {
-    const small = await resizeBitmap(bmp, exportR.maxSize); bmp.close(); bmp = small; shrunk = true;
+  const s = Math.min(1, OUT_MAX_SIDE / Math.max(bmp.width, bmp.height), Math.sqrt(OUT_MAX_AREA / (bmp.width * bmp.height)));
+  if (s < 1) {
+    const small = await resizeBitmap(bmp, Math.floor(Math.max(bmp.width, bmp.height) * s)); bmp.close(); bmp = small; shrunk = true;
   }
-  exportR.setImage(bmp); exportR.setLut(lut); exportR.render(type === 'image/jpeg'); bmp.close();
-  const blob = await new Promise(r => exportR.canvas.toBlob(r, type, 0.95));
-  if (!blob) throw new Error('导出失败：图片太大或内存不足');
-  return { blob, shrunk };
+  const W = bmp.width, H = bmp.height, gl = exportR.gl, opaque = type === 'image/jpeg';
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const ctx = out.getContext('2d');
+  try {
+    if (!ctx) throw new Error('导出失败：图片太大或内存不足');
+    exportR.setLut(lut);
+    let T = Math.min(4096, exportR.maxSize);
+    tiles: for (;;) {
+      for (let y = 0; y < H; y += T) for (let x = 0; x < W; x += T) {
+        const w = Math.min(T, W - x), h = Math.min(T, H - y);
+        const tile = await cropBitmap(bmp, x, y, w, h);
+        exportR.setImage(tile); tile.close();
+        if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) {
+          if (T <= 512) throw new Error('导出失败：显卡内存不足，请关掉其他网页后重试');
+          T >>= 1; ctx.clearRect(0, 0, W, H); continue tiles;
+        }
+        exportR.render(opaque);
+        ctx.drawImage(exportR.canvas, 0, 0, w, h, x, y, w, h);
+      }
+      break;
+    }
+    const blob = await new Promise(r => out.toBlob(r, type, 0.95));
+    if (!blob) throw new Error('导出失败：图片太大或内存不足');
+    return { blob, shrunk };
+  } finally { bmp.close(); out.width = out.height = 0; }
 }
 const stampNow = () => {
   const d = new Date(), z = n => String(n).padStart(2, '0');
@@ -1157,7 +1183,7 @@ async function withBusy(label, fn) {
 }
 $('dlPhoto').onclick = () => withBusy('正在按原图分辨率导出…', async () => {
   const type = $('fmt').value, { blob, shrunk } = await renderFullRes(state.input.file, state.lut, type);
-  if (shrunk) toast('图片超过显卡上限，已按上限尺寸输出');
+  if (shrunk) toast('图片超过浏览器画布上限（单边 16384 像素），已按上限尺寸输出');
   download(blob, `${baseName(state.input.name)}_匹配_${baseName(selRef().name)}.${extOf(type)}`);
 });
 $('dlCube').onclick = () => withBusy('正在生成 LUT…', async () => {
@@ -1247,7 +1273,7 @@ $('bExport').onclick = async () => {
   b.running = false; b.stop = false; updateBatchCount(); $('bExport').disabled = false;
   $('bText').textContent += stopped ? ' · 已停止' : ' · 全部完成';
   setStatus(stopped ? `已停止，导出了 ${done - fails.length} 张` : `批量导出完成：${done - fails.length} 张`);
-  if (shrunk) toast(`${shrunk} 张超过显卡上限，已按上限尺寸输出`, false, 6000);
+  if (shrunk) toast(`${shrunk} 张超过浏览器画布上限（单边 16384 像素），已按上限尺寸输出`, false, 6000);
   if (fails.length) toast(`有 ${fails.length} 张失败：${fails.slice(0, 3).join('、')}${fails.length > 3 ? ' 等' : ''}`, true, 8000);
   else if (!stopped) toast(outDir ? `已保存到「${folder}」文件夹` : (zipPart > 1 ? `已分 ${zipPart} 个 zip 下载` : '已打包下载'), false, 5000);
 };
