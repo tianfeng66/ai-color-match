@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI 色彩匹配 · 本地版</title>
+<style>
+  :root {
+    --bg: #111214; --panel: #1b1c20; --card: #232429; --line: #33353c;
+    --text: #e8e8ea; --muted: #9a9ca5; --accent: #ffb547; --accent2: #ff8a3d; --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+  .app { display: grid; grid-template-columns: 340px 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 16px; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; background: #15161a; border: 1px solid var(--line); border-radius: 9px; padding: 3px; margin-bottom: 12px; }
+  .tabs button { background: none; border: 0; border-radius: 7px; padding: 7px 0; cursor: pointer; color: var(--muted); font-weight: 600; }
+  .tabs button.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #1a1205; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  .card h2 small { color: var(--muted); font-weight: normal; }
+  .drop { border: 1.5px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted);
+    cursor: pointer; transition: .15s; font-size: 13px; }
+  .drop:hover, .drop.over { border-color: var(--accent); color: var(--text); }
+  .input-thumb { display: flex; gap: 10px; align-items: center; }
+  .input-thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: #000; }
+  .input-thumb .meta { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); }
+  .input-thumb .meta b { display: block; color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .ref { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; background: #000; }
+  .ref img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ref.sel { border-color: var(--accent); }
+  .ref .x, .tile .x { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,.65);
+    cursor: pointer; font-size: 12px; line-height: 20px; padding: 0; display: none; }
+  .ref:hover .x, .tile:hover .x { display: block; }
+  .ref .badge { position: absolute; left: 3px; bottom: 3px; background: rgba(0,0,0,.7); border-radius: 3px; padding: 0 4px; font-size: 10px; line-height: 16px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .row label { width: 64px; color: var(--muted); font-size: 12px; flex: none; }
+  .row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .row .val { width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+  select { flex: 1; min-width: 0; background: #15161a; border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; }
+  select:disabled { opacity: .5; }
+  .hint { color: var(--muted); font-size: 11.5px; margin: 4px 0 0; }
+  .btn { background: #2d2f36; border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; cursor: pointer; transition: .15s; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #1a1205; border: 0; font-weight: 600; }
+  .btn.wide { width: 100%; margin-top: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .link { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0; text-decoration: underline; }
+  .opt { display: flex; gap: 8px; align-items: flex-start; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; margin-top: 6px; cursor: pointer; font-size: 13px; }
+  .opt small { display: block; color: var(--muted); font-size: 11.5px; }
+  .prog { height: 8px; background: #15161a; border-radius: 4px; overflow: hidden; margin: 10px 0 4px; }
+  .prog > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s; }
+  main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .stage { flex: 1; position: relative; display: grid; place-items: center; overflow: hidden; padding: 20px; outline: none; min-height: 0; }
+  .viewer { position: relative; line-height: 0; user-select: none; touch-action: none; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
+  .viewer canvas { display: block; }
+  #cvOrig { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .divider { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; transform: translateX(-1px); cursor: ew-resize; }
+  .divider::after { content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 34px; height: 34px;
+    line-height: 34px; text-align: center; border-radius: 50%; background: #fff; color: #222; font-size: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+  .tag { position: absolute; top: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,.6); font-size: 12px; line-height: 1.6; pointer-events: none; }
+  .tag.l { left: 10px; } .tag.r { right: 10px; }
+  .back { position: absolute; top: 14px; left: 14px; z-index: 5; }
+  .empty { color: var(--muted); text-align: center; max-width: 440px; }
+  .empty h3 { color: var(--text); font-size: 18px; margin: 0 0 12px; }
+  .empty ol { text-align: left; line-height: 2; }
+  .gridwrap { position: absolute; inset: 0; overflow-y: auto; padding: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .tile { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; cursor: zoom-in; }
+  .tile:hover { border-color: var(--accent); }
+  .tile canvas { display: block; width: 100%; height: 170px; object-fit: contain; background: #0b0b0c; }
+  .tile .nm { font-size: 11.5px; color: var(--muted); padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .st { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.7); border-radius: 4px; padding: 0 6px; font-size: 11px; line-height: 18px; }
+  .tile .st.err { background: var(--danger); color: #fff; }
+  .bar { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel);
+    color: var(--muted); font-size: 12px; min-height: 38px; }
+  .bar .sp { flex: 1; }
+  .banner { background: #4a2323; border-bottom: 1px solid var(--danger); padding: 8px 16px; font-size: 13px; }
+  .toast { position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); background: #2b2d33; border: 1px solid var(--line);
+    padding: 9px 16px; border-radius: 8px; z-index: 99; box-shadow: 0 6px 24px rgba(0,0,0,.5); max-width: 80vw; }
+  .toast.err { border-color: var(--danger); }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; width: 560px; max-width: 92vw; padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { margin: 0 0 8px; font-size: 16px; }
+  dialog h4 { margin: 14px 0 4px; font-size: 14px; color: var(--accent); }
+  dialog ol, dialog ul { margin: 4px 0; padding-left: 20px; line-height: 1.8; color: #cfd0d4; font-size: 13px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="head"><h1>AI 色彩匹配 · 本地版</h1><button class="link" id="helpBtn">使用说明</button></div>
+    <div class="sub">把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
+    <div class="tabs"><button id="tabSingle" class="on">单张调色</button><button id="tabBatch">批量调色</button></div>
+
+    <div class="card" data-mode="single">
+      <h2>① 原图 <small>要调色的照片</small></h2>
+      <div id="inputDrop" class="drop">点击选择或拖进来<br><small>JPG / PNG / WebP</small></div>
+      <div id="inputInfo" class="input-thumb hidden">
+        <img id="inputImg" alt="" />
+        <div class="meta"><b id="inputName"></b><span id="inputSize"></span><br><button class="link" id="inputReplace">更换原图</button></div>
+      </div>
+    </div>
+
+    <div class="card hidden" data-mode="batch">
+      <h2>① 批量照片 <small id="bCount">0 张</small></h2>
+      <div id="batchDrop" class="drop">把一批照片或整个文件夹拖进来</div>
+      <div class="grid3" style="margin-top:8px">
+        <button class="btn" id="bAddFiles">添加照片</button>
+        <button class="btn" id="bAddDir">添加文件夹</button>
+        <button class="btn" id="bClear">清空</button>
+      </div>
+      <label class="opt"><input type="radio" name="bmode" value="same" checked />
+        <div>统一效果<small>整批照片作为一个整体和参考图匹配，所有照片用同一个 LUT，风格最统一。</small></div></label>
+      <label class="opt"><input type="radio" name="bmode" value="each" />
+        <div>逐张匹配<small>每张照片各自和参考图匹配，适合明暗、场景差别很大的一批照片。</small></div></label>
+    </div>
+
+    <div class="card">
+      <h2>② 参考图 <small>点选一张，可放多张</small></h2>
+      <div id="refDrop" class="drop">点击添加参考图或拖进来（可多选）</div>
+      <p class="hint">已有调色文件？<button class="link" id="lutImport">导入 .cube LUT</button> 当作参考直接套用。</p>
+      <div id="refs" class="refs"></div>
+    </div>
+
+    <div class="card">
+      <h2>③ 调整 <button class="link" id="resetBtn">恢复默认</button></h2>
+      <div class="row"><label>算法</label>
+        <select id="method">
+          <option value="smart">智能匹配（推荐）</option>
+          <option value="ot">分布迁移（更强烈）</option>
+          <option value="mkl">线性匹配（最稳，不出怪色）</option>
+          <option value="reinhard">经典 Reinhard</option>
+          <option value="hist">RGB 直方图</option>
+        </select>
+      </div>
+      <div class="row"><label>强度</label><input id="amount" type="range" min="0" max="100" value="60" /><span class="val" id="amountVal">60%</span></div>
+      <div class="row"><label>亮度跟随</label><input id="lum" type="range" min="0" max="100" value="50" /><span class="val" id="lumVal">50%</span></div>
+      <p class="hint" id="adjHint">亮度跟随 0% = 只换色调、保留原图明暗；100% = 明暗也跟参考图走。默认值按 Polarr 官方 50 组示例校准。</p>
+    </div>
+
+    <div class="card">
+      <h2>④ 导出</h2>
+      <div class="row"><label>图片格式</label>
+        <select id="fmt"><option value="image/jpeg">JPG（质量 95）</option><option value="image/png">PNG（无损）</option></select>
+      </div>
+      <div data-mode="single">
+        <div class="grid2">
+          <button class="btn primary" id="dlPhoto" disabled>下载图片</button>
+          <button class="btn" id="dlCube" disabled>LUT（.cube）</button>
+          <button class="btn" id="dlXmp" disabled>LR 预设（.xmp）</button>
+          <button class="btn" id="dlAll" disabled>全部打包（.zip）</button>
+        </div>
+        <p class="hint">图片按原图分辨率输出。.cube 可用于 PS / PR / 达芬奇 / FCPX；.xmp 用于 Lightroom / ACR。</p>
+      </div>
+      <div data-mode="batch" class="hidden">
+        <button class="btn primary wide" id="bExport" disabled>导出全部</button>
+        <div class="grid2" style="margin-top:6px">
+          <button class="btn" id="bCube" disabled>统一 LUT（.cube）</button>
+          <button class="btn" id="bXmp" disabled>统一 LR 预设（.xmp）</button>
+        </div>
+        <div class="prog hidden" id="bProgBox"><div id="bProg"></div></div>
+        <p class="hint" id="bText">按原图分辨率输出到新建的「调色输出_日期时间」文件夹，原图不会被修改。</p>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="banner hidden" id="banner"></div>
+    <div class="stage" id="stage" tabindex="0">
+      <div class="empty" id="emptySingle">
+        <h3>单张调色 · 三步出图</h3>
+        <ol>
+          <li>左侧放入要调色的<b>原图</b></li>
+          <li>添加一张或多张<b>参考图</b>（或导入 .cube），点选其中一张</li>
+          <li>拖动强度，满意后<b>导出</b>图片 / LUT / LR 预设</li>
+        </ol>
+        <p>也可以直接把图片拖到这里：第一张当原图，之后的当参考图。<br>一次处理很多张？点左上角「批量调色」。</p>
+      </div>
+      <div class="empty hidden" id="emptyBatch">
+        <h3>批量调色</h3>
+        <ol>
+          <li>把一批照片或整个文件夹<b>拖到这里</b></li>
+          <li>添加并点选一张<b>参考图</b>（或导入 .cube LUT）</li>
+          <li>在网格里看每张效果，点任意一张可放大对比</li>
+          <li>满意后点「<b>导出全部</b>」</li>
+        </ol>
+      </div>
+      <div class="gridwrap hidden" id="gridWrap"><div class="tiles" id="tiles"></div></div>
+      <button class="btn back hidden" id="backBtn">← 返回全部照片</button>
+      <div class="viewer hidden" id="viewer">
+        <canvas id="cvOut"></canvas>
+        <canvas id="cvOrig"></canvas>
+        <div class="divider" id="divider"></div>
+        <span class="tag l">原图</span><span class="tag r" id="tagR">效果</span>
+      </div>
+    </div>
+    <div class="bar">
+      <span id="status">准备就绪</span><span class="sp"></span>
+      <span id="barHint">拖动中线对比 · ← → 微调 · 按住空格看原图</span>
+    </div>
+  </main>
+</div>
+
+<dialog id="helpDlg">
+  <h3>使用说明</h3>
+  <p class="hint" style="font-size:13px">所有计算都在你自己的电脑上完成，图片不会上传。建议用新版 Chrome / Edge（Windows、Mac 都可以），Safari 也能用。</p>
+  <h4>单张调色</h4>
+  <ol>
+    <li>「① 原图」放入要调色的照片。</li>
+    <li>「② 参考图」放入想要的色调样图（可以多张），点选一张；也可以导入现成的 .cube LUT。</li>
+    <li>拖动「强度」「亮度跟随」。大图中线可左右拖，左边原图、右边效果；按住空格看原图。</li>
+    <li>导出原分辨率图片、.cube（PS / PR / 达芬奇 / FCPX）或 .xmp（Lightroom / ACR 预设）。</li>
+  </ol>
+  <h4>批量调色</h4>
+  <ol>
+    <li>切到「批量调色」，把一批照片或整个文件夹拖进来。</li>
+    <li>选参考图或 LUT，选「统一效果」（整批同一个 LUT，风格统一）或「逐张匹配」（每张各算一次）。</li>
+    <li>网格里实时显示每张效果，点一张可放大对比；不要的照片点右上角 ✕ 移出。</li>
+    <li>点「导出全部」→ 选一个保存位置，会新建「调色输出_日期时间」文件夹，子文件夹结构保持不变。Safari / Firefox 会打包成 zip 下载。</li>
+  </ol>
+  <h4>小贴士</h4>
+  <ul>
+    <li>亮度跟随 0% = 只换色调、保留原图明暗；100% = 明暗也跟参考图。</li>
+    <li>内容差别很大的两张图，用「线性匹配」最稳，不会出怪色。</li>
+    <li>HEIC / TIFF 只有 Safari 能打开，Chrome 里请先转成 JPG。</li>
+    <li>批量导出时可以切到别的窗口，但不要关掉这个网页。</li>
+  </ul>
+  <div style="text-align:right;margin-top:12px"><button class="btn primary" id="helpClose">知道了</button></div>
+</dialog>
+
+<input type="file" id="fileInput" accept="image/*" class="hidden" />
+<input type="file" id="fileRefs" accept="image/*,.cube" multiple class="hidden" />
+<input type="file" id="fileLut" accept=".cube" multiple class="hidden" />
+<input type="file" id="fileBatch" accept="image/*" multiple class="hidden" />
+<input type="file" id="dirBatch" webkitdirectory multiple class="hidden" />
+
+<script id="core">
+// ===== 颜色匹配核心（纯函数，不依赖页面）=====
+const LUT_N = 25;
+
+function s2l(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function l2s(c) {
+  if (!(c > 0)) return 0;
+  if (c >= 1) return 1;
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
+function rgbToOk(rgb) {
+  const out = new Float64Array(rgb.length);
+  for (let i = 0; i < rgb.length; i += 3) {
+    const r = s2l(rgb[i]), g = s2l(rgb[i + 1]), b = s2l(rgb[i + 2]);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    out[i] = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+    out[i + 1] = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+    out[i + 2] = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  }
+  return out;
+}
+
+function okToRgb(ok) {
+  const out = new Float64Array(ok.length);
+  for (let i = 0; i < ok.length; i += 3) {
+    const L = ok[i], A = ok[i + 1], B = ok[i + 2];
+    const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+    const m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+    const s = (L - 0.0894841775 * A - 1.2914855480 * B) ** 3;
+    out[i] = l2s(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s);
+    out[i + 1] = l2s(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s);
+    out[i + 2] = l2s(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+  }
+  return out;
+}
+
+const GRID_RGB = (() => {
+  const g = new Float64Array(LUT_N ** 3 * 3);
+  let o = 0;
+  for (let r = 0; r < LUT_N; r++)
+    for (let gg = 0; gg < LUT_N; gg++)
+      for (let b = 0; b < LUT_N; b++) {
+        g[o++] = r / (LUT_N - 1); g[o++] = gg / (LUT_N - 1); g[o++] = b / (LUT_N - 1);
+      }
+  return g;
+})();
+const GRID_OK = rgbToOk(GRID_RGB);
+
+function meanOf(x) {
+  const n = x.length / 3; let a = 0, b = 0, c = 0;
+  for (let i = 0; i < x.length; i += 3) { a += x[i]; b += x[i + 1]; c += x[i + 2]; }
+  return [a / n, b / n, c / n];
+}
+function covOf(x, mu) {
+  const C = new Array(9).fill(0), n = x.length / 3;
+  for (let i = 0; i < x.length; i += 3) {
+    const d0 = x[i] - mu[0], d1 = x[i + 1] - mu[1], d2 = x[i + 2] - mu[2];
+    C[0] += d0 * d0; C[1] += d0 * d1; C[2] += d0 * d2; C[4] += d1 * d1; C[5] += d1 * d2; C[8] += d2 * d2;
+  }
+  C[3] = C[1]; C[6] = C[2]; C[7] = C[5];
+  return C.map(v => v / Math.max(1, n - 1));
+}
+function mul3(A, B) {
+  const C = new Array(9);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+    C[i * 3 + j] = A[i * 3] * B[j] + A[i * 3 + 1] * B[3 + j] + A[i * 3 + 2] * B[6 + j];
+  return C;
+}
+function inv3(A) {
+  const [a, b, c, d, e, f, g, h, i] = A;
+  const x = e * i - f * h, y = f * g - d * i, z = d * h - e * g, det = a * x + b * y + c * z;
+  return [x / det, (c * h - b * i) / det, (b * f - c * e) / det,
+          y / det, (a * i - c * g) / det, (c * d - a * f) / det,
+          z / det, (b * g - a * h) / det, (a * e - b * d) / det];
+}
+function eigSym3(M) {
+  const a = M.slice(), V = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  for (let sweep = 0; sweep < 60; sweep++) {
+    if (a[1] * a[1] + a[2] * a[2] + a[5] * a[5] < 1e-30) break;
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      const apq = a[p * 3 + q];
+      if (Math.abs(apq) < 1e-300) continue;
+      const theta = (a[q * 3 + q] - a[p * 3 + p]) / (2 * apq);
+      const t = (theta >= 0 ? 1 : -1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+      const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < 3; k++) {
+        const kp = a[k * 3 + p], kq = a[k * 3 + q];
+        a[k * 3 + p] = c * kp - s * kq; a[k * 3 + q] = s * kp + c * kq;
+      }
+      for (let k = 0; k < 3; k++) {
+        const pk = a[p * 3 + k], qk = a[q * 3 + k];
+        a[p * 3 + k] = c * pk - s * qk; a[q * 3 + k] = s * pk + c * qk;
+      }
+      for (let k = 0; k < 3; k++) {
+        const vp = V[k * 3 + p], vq = V[k * 3 + q];
+        V[k * 3 + p] = c * vp - s * vq; V[k * 3 + q] = s * vp + c * vq;
+      }
+    }
+  }
+  return { w: [a[0], a[4], a[8]], V };
+}
+function sqrtSym3(A) {
+  const { w, V } = eigSym3(A), d = w.map(x => Math.sqrt(Math.max(x, 1e-10)));
+  const R = new Array(9);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+    R[i * 3 + j] = V[i * 3] * d[0] * V[j * 3] + V[i * 3 + 1] * d[1] * V[j * 3 + 1] + V[i * 3 + 2] * d[2] * V[j * 3 + 2];
+  return R;
+}
+function affine(pts, T, ms, mr) {
+  const out = new Float64Array(pts.length);
+  for (let i = 0; i < pts.length; i += 3) {
+    const d0 = pts[i] - ms[0], d1 = pts[i + 1] - ms[1], d2 = pts[i + 2] - ms[2];
+    out[i] = T[0] * d0 + T[1] * d1 + T[2] * d2 + mr[0];
+    out[i + 1] = T[3] * d0 + T[4] * d1 + T[5] * d2 + mr[1];
+    out[i + 2] = T[6] * d0 + T[7] * d1 + T[8] * d2 + mr[2];
+  }
+  return out;
+}
+
+// Monge-Kantorovich 线性映射：均值 + 协方差同时对齐
+function mkl(src, ref, pts) {
+  const ms = meanOf(src), mr = meanOf(ref);
+  const A = covOf(src, ms), B = covOf(ref, mr);
+  for (const k of [0, 4, 8]) { A[k] += 1e-6; B[k] += 1e-6; }
+  const As = sqrtSym3(A), Ai = inv3(As);
+  const T = mul3(mul3(Ai, sqrtSym3(mul3(mul3(As, B), As))), Ai);
+  return affine(pts, T, ms, mr);
+}
+
+function reinhard(src, ref, pts) {
+  const ms = meanOf(src), mr = meanOf(ref), ss = [0, 0, 0], sr = [0, 0, 0];
+  for (let i = 0; i < src.length; i += 3) for (let k = 0; k < 3; k++) ss[k] += (src[i + k] - ms[k]) ** 2;
+  for (let i = 0; i < ref.length; i += 3) for (let k = 0; k < 3; k++) sr[k] += (ref[i + k] - mr[k]) ** 2;
+  const T = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let k = 0; k < 3; k++) T[k * 4] = Math.sqrt(sr[k] / (ref.length / 3)) / (Math.sqrt(ss[k] / (src.length / 3)) + 1e-6);
+  return affine(pts, T, ms, mr);
+}
+
+function quantile(sorted, q) {
+  const pos = q * (sorted.length - 1), i = Math.floor(pos), f = pos - i;
+  return i + 1 < sorted.length ? sorted[i] + f * (sorted[i + 1] - sorted[i]) : sorted[i];
+}
+// 一维分位数映射：把 src 分布映射到 ref 分布，超出范围的值平移外推
+function makeQmap(srcSorted, refSorted, K = 128) {
+  const sk = new Float64Array(K), rk = new Float64Array(K);
+  for (let k = 0; k < K; k++) {
+    sk[k] = quantile(srcSorted, k / (K - 1)) + k * 1e-9;
+    rk[k] = quantile(refSorted, k / (K - 1));
+  }
+  return v => {
+    if (v <= sk[0]) return rk[0] + (v - sk[0]);
+    if (v >= sk[K - 1]) return rk[K - 1] + (v - sk[K - 1]);
+    let lo = 0, hi = K - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (sk[m] <= v) lo = m; else hi = m; }
+    return rk[lo] + (v - sk[lo]) / (sk[hi] - sk[lo]) * (rk[hi] - rk[lo]);
+  };
+}
+
+function mulberry32(a) {
+  return () => {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function randRot(rnd) {
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+  const cols = [];
+  for (let k = 0; k < 3; k++) {
+    let v = [gauss(), gauss(), gauss()];
+    for (const u of cols) { const d = v[0] * u[0] + v[1] * u[1] + v[2] * u[2]; v = v.map((x, j) => x - d * u[j]); }
+    const n = Math.hypot(...v) || 1; cols.push(v.map(x => x / n));
+  }
+  const R = new Array(9);
+  for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) R[j * 3 + k] = cols[k][j];
+  return R;
+}
+
+// 迭代分布迁移（Pitié 2005 / sliced optimal transport），同步作用到 LUT 网格点
+function idt(src, ref, pts, iters = 20, relax = 1, seed = 1) {
+  const s = Float64Array.from(src), p = Float64Array.from(pts);
+  const ns = s.length / 3, nr = ref.length / 3, np = p.length / 3;
+  const bs = new Float64Array(ns), br = new Float64Array(nr), bp = new Float64Array(np);
+  const ds = new Float64Array(s.length), dp = new Float64Array(p.length);
+  const rnd = mulberry32(seed);
+  for (let it = 0; it < iters; it++) {
+    const R = it === 0 ? [1, 0, 0, 0, 1, 0, 0, 0, 1] : randRot(rnd);
+    ds.fill(0); dp.fill(0);
+    for (let k = 0; k < 3; k++) {
+      const r0 = R[k], r1 = R[3 + k], r2 = R[6 + k];
+      for (let i = 0; i < ns; i++) bs[i] = s[3 * i] * r0 + s[3 * i + 1] * r1 + s[3 * i + 2] * r2;
+      for (let i = 0; i < nr; i++) br[i] = ref[3 * i] * r0 + ref[3 * i + 1] * r1 + ref[3 * i + 2] * r2;
+      for (let i = 0; i < np; i++) bp[i] = p[3 * i] * r0 + p[3 * i + 1] * r1 + p[3 * i + 2] * r2;
+      const qm = makeQmap(bs.slice().sort(), br.slice().sort());
+      for (let i = 0; i < ns; i++) { const d = qm(bs[i]) - bs[i]; ds[3 * i] += d * r0; ds[3 * i + 1] += d * r1; ds[3 * i + 2] += d * r2; }
+      for (let i = 0; i < np; i++) { const d = qm(bp[i]) - bp[i]; dp[3 * i] += d * r0; dp[3 * i + 1] += d * r1; dp[3 * i + 2] += d * r2; }
+    }
+    for (let i = 0; i < s.length; i++) s[i] += relax * ds[i];
+    for (let i = 0; i < p.length; i++) p[i] += relax * dp[i];
+  }
+  return p;
+}
+
+function histRGB(src, ref) {
+  const out = new Float64Array(GRID_RGB.length), n = src.length / 3, m = ref.length / 3;
+  for (let k = 0; k < 3; k++) {
+    const a = new Float64Array(n), b = new Float64Array(m);
+    for (let i = 0; i < n; i++) a[i] = src[3 * i + k];
+    for (let i = 0; i < m; i++) b[i] = ref[3 * i + k];
+    const qm = makeQmap(a.sort(), b.sort());
+    for (let i = k; i < out.length; i += 3) out[i] = Math.min(1, Math.max(0, qm(GRID_RGB[i])));
+  }
+  return out;
+}
+
+// 返回 LUT 网格点映射后的 OKLab 值（未叠加强度 / 亮度跟随）
+function buildFull(srcRGB, refRGB, method) {
+  srcRGB = combineSamples([srcRGB], 20000); refRGB = combineSamples([refRGB], 20000);
+  if (method === 'hist') return rgbToOk(histRGB(srcRGB, refRGB));
+  const so = rgbToOk(srcRGB), ro = rgbToOk(refRGB);
+  if (method === 'mkl') return mkl(so, ro, GRID_OK);
+  if (method === 'reinhard') return reinhard(so, ro, GRID_OK);
+  if (method === 'ot') return idt(so, ro, GRID_OK);
+  const a = mkl(so, ro, GRID_OK), b = idt(so, ro, GRID_OK);
+  for (let i = 0; i < a.length; i++) a[i] = 0.5 * (a[i] + b[i]);
+  return a;
+}
+
+// 叠加亮度跟随（OKLab 的 L）和强度（RGB 混合），得到最终 LUT：index = (r*N*N + g*N + b)*3，取值 0~1
+function finalizeLut(fullOk, amount, lum) {
+  const t = new Float64Array(fullOk.length);
+  for (let i = 0; i < t.length; i += 3) {
+    t[i] = GRID_OK[i] + lum * (fullOk[i] - GRID_OK[i]);
+    t[i + 1] = fullOk[i + 1]; t[i + 2] = fullOk[i + 2];
+  }
+  const rgb = okToRgb(t), out = new Float32Array(rgb.length);
+  for (let i = 0; i < out.length; i++) out[i] = GRID_RGB[i] + amount * (rgb[i] - GRID_RGB[i]);
+  return out;
+}
+
+function identityLut() { return Float32Array.from(GRID_RGB); }
+
+// ===== 导出格式 =====
+function lutToCube(lut, title) {
+  const n = Math.round(Math.cbrt(lut.length / 3));
+  const lines = [`TITLE "${title.replace(/"/g, "'")}"`, '# 由「AI 色彩匹配 · 本地版」生成', 'DOMAIN_MIN 0 0 0', 'DOMAIN_MAX 1 1 1', `LUT_3D_SIZE ${n}`];
+  for (let b = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++) {
+    const i = (r * n * n + g * n + b) * 3;
+    lines.push(`${lut[i].toFixed(6)} ${lut[i + 1].toFixed(6)} ${lut[i + 2].toFixed(6)}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// Adobe Camera Raw 的 RGBTable：uint16 存「目标值 - 恒等值」，zlib 压缩后用 ACR 自有的 base85 字母表编码
+function adobeTableBytes(lut) {
+  const n = Math.round(Math.cbrt(lut.length / 3));
+  const size = Math.ceil((16 + n ** 3 * 6 + 4 + 4 + 4 + 8 + 8) / 4) * 4;
+  const dv = new DataView(new ArrayBuffer(size));
+  let o = 0;
+  const u32 = v => { dv.setUint32(o, v, true); o += 4; };
+  const f64 = v => { dv.setFloat64(o, v, true); o += 8; };
+  u32(1); u32(1); u32(3); u32(n);
+  const id = new Array(n);
+  for (let k = 0; k < n; k++) id[k] = Math.floor((k * 65535 + (n >> 1)) / (n - 1));
+  const wrap = v => ((v % 65536) + 65536) % 65536;
+  let p = 0;
+  for (let r = 0; r < n; r++) for (let g = 0; g < n; g++) for (let b = 0; b < n; b++) {
+    const ids = [id[r], id[g], id[b]];
+    for (let c = 0; c < 3; c++) {
+      const v = Math.min(1, Math.max(0, lut[p++]));
+      dv.setUint16(o, wrap(Math.round(v * 65535) - ids[c]), true); o += 2;
+    }
+  }
+  u32(0); u32(1); u32(0); f64(0); f64(2);
+  return new Uint8Array(dv.buffer);
+}
+function acrBase85(bytes) {
+  const A = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?`'|()[]{}@%$#";
+  const buf = new Uint8Array(bytes.length + 3); buf.set(bytes);
+  const out = [];
+  let f = 0, left = bytes.length;
+  while (left > 0) {
+    let v = (buf[f] | buf[f + 1] << 8 | buf[f + 2] << 16 | buf[f + 3] << 24) >>> 0; f += 4;
+    for (let d = 0; d < 5; d++) {
+      out.push(A[v % 85]); v = Math.floor(v / 85);
+      if (d > 0 && --left === 0) break;
+    }
+  }
+  return out.join('');
+}
+async function zlibDeflate(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function lutToXmp(lut, name, deflate = zlibDeflate) {
+  const raw = adobeTableBytes(lut), z = await deflate(raw);
+  const pre = new Uint8Array(4 + z.length);
+  new DataView(pre.buffer).setUint32(0, raw.length, true); pre.set(z, 4);
+  const hex = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const uuid = hex(), table = hex();
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  return `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.6">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Look" crs:UUID="${uuid}" crs:SupportsAmount="True" crs:SupportsColor="True"
+   crs:SupportsMonochrome="True" crs:SupportsHighDynamicRange="True" crs:SupportsNormalDynamicRange="True"
+   crs:SupportsSceneReferred="True" crs:SupportsOutputReferred="True" crs:Version="11.3.1" crs:ProcessVersion="11.0"
+   crs:ConvertToGrayscale="False" crs:RGBTable="${table}" crs:Table_${table}="${acrBase85(pre)}" crs:HasSettings="True">
+   <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">${esc(name)}</rdf:li></rdf:Alt></crs:Name>
+   <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">AI 色彩匹配</rdf:li></rdf:Alt></crs:Group>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+`;
+}
+
+// 仅存储（不压缩）的 zip，文件名按 UTF-8 标记，Windows / Mac 解压都不乱码
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  let offset = 0;
+  for (const { name, data } of entries) {
+    const nm = enc.encode(name), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, dosTime, true); h.setUint16(12, dosDate, true); h.setUint32(14, crc, true);
+    h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), nm, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint16(10, 0, true); c.setUint16(12, dosTime, true); c.setUint16(14, dosDate, true); c.setUint32(16, crc, true);
+    c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, nm.length, true);
+    c.setUint32(42, offset, true);
+    central.push(new Uint8Array(c.buffer), nm);
+    offset += 30 + nm.length + data.length;
+  }
+  const cdSize = central.reduce((s, a) => s + a.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, entries.length, true); e.setUint16(10, entries.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
+}
+
+// ===== 导入 .cube =====
+function parseCube(text) {
+  let n = 0, dmin = [0, 0, 0], dmax = [1, 1, 1];
+  const vals = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line[0] === '#') continue;
+    const up = line.toUpperCase(), p = line.split(/\s+/);
+    if (up.startsWith('LUT_1D_SIZE')) throw new Error('这是 1D LUT，只支持 3D LUT');
+    if (up.startsWith('LUT_3D_SIZE')) { n = parseInt(p[1], 10); continue; }
+    if (up.startsWith('DOMAIN_MIN')) { dmin = p.slice(1, 4).map(Number); continue; }
+    if (up.startsWith('DOMAIN_MAX')) { dmax = p.slice(1, 4).map(Number); continue; }
+    if (up.startsWith('LUT_3D_INPUT_RANGE')) { dmin = [+p[1], +p[1], +p[1]]; dmax = [+p[2], +p[2], +p[2]]; continue; }
+    if (/^[A-Z_]/.test(up)) continue;
+    if (p.length >= 3) vals.push(+p[0], +p[1], +p[2]);
+  }
+  if (!(n >= 2) || vals.length !== n ** 3 * 3 || vals.some(v => !Number.isFinite(v)))
+    throw new Error('不是有效的 3D .cube 文件（缺少 LUT_3D_SIZE 或数据不完整）');
+  const data = new Float64Array(vals.length);
+  let i = 0;
+  for (let b = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++) {
+    const o = (r * n * n + g * n + b) * 3;
+    data[o] = vals[i++]; data[o + 1] = vals[i++]; data[o + 2] = vals[i++];
+  }
+  return { n, data, dmin, dmax };
+}
+
+// 三线性取样，lut 下标 = (r*n*n + g*n + b)*3
+function sampleLut(lut, n, r, g, b, out, o) {
+  const x = [r, g, b].map(v => Math.min(1, Math.max(0, v)) * (n - 1));
+  const i0 = x.map(v => Math.min(n - 2, Math.floor(v))), f = x.map((v, k) => v - i0[k]);
+  for (let c = 0; c < 3; c++) {
+    let acc = 0;
+    for (let dr = 0; dr < 2; dr++) for (let dg = 0; dg < 2; dg++) for (let db = 0; db < 2; db++) {
+      const w = (dr ? f[0] : 1 - f[0]) * (dg ? f[1] : 1 - f[1]) * (db ? f[2] : 1 - f[2]);
+      if (w) acc += w * lut[((i0[0] + dr) * n * n + (i0[1] + dg) * n + (i0[2] + db)) * 3 + c];
+    }
+    out[o + c] = Math.min(1, Math.max(0, acc));
+  }
+}
+
+// 把任意尺寸的 .cube 重采样到 LUT_N 网格，返回与 buildFull 相同格式的 OKLab 数组
+function cubeToFullOk({ n, data, dmin, dmax }) {
+  const rgb = new Float64Array(GRID_RGB.length);
+  for (let i = 0; i < rgb.length; i += 3) {
+    const u = [0, 1, 2].map(k => (GRID_RGB[i + k] - dmin[k]) / ((dmax[k] - dmin[k]) || 1));
+    sampleLut(data, n, u[0], u[1], u[2], rgb, i);
+  }
+  return rgbToOk(rgb);
+}
+
+// 多张照片合并取样（统一效果用），总点数封顶避免太慢
+function combineSamples(samples, cap = 150000) {
+  const total = samples.reduce((s, a) => s + a.length / 3, 0), stride = Math.max(1, Math.ceil(total / cap));
+  const out = [];
+  for (const a of samples) for (let i = 0; i < a.length; i += 3 * stride) out.push(a[i], a[i + 1], a[i + 2]);
+  return Float64Array.from(out);
+}
+</script>
+
+<script>
+// ===== WebGL 渲染：原图 + 3D LUT（硬件三线性插值）=====
+class LutRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: false });
+    if (!gl) throw new Error('当前浏览器不支持 WebGL2，请用新版 Chrome / Edge / Safari 打开');
+    this.gl = gl;
+    const vs = `#version 300 es
+      in vec2 p; out vec2 uv;
+      void main() { uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); gl_Position = vec4(p, 0.0, 1.0); }`;
+    const fs = `#version 300 es
+      precision highp float; precision highp sampler3D;
+      uniform sampler2D img; uniform sampler3D lut; uniform float n; uniform bool opaque;
+      in vec2 uv; out vec4 o;
+      void main() {
+        vec4 c = texture(img, uv);
+        vec3 q = c.bgr * ((n - 1.0) / n) + 0.5 / n;
+        o = vec4(texture(lut, q).rgb, opaque ? 1.0 : c.a);
+      }`;
+    const sh = (type, src) => {
+      const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    this.imgTex = gl.createTexture(); this.lutTex = gl.createTexture();
+    gl.uniform1i(gl.getUniformLocation(prog, 'img'), 0); gl.uniform1i(gl.getUniformLocation(prog, 'lut'), 1);
+    this.uN = gl.getUniformLocation(prog, 'n'); this.uOpaque = gl.getUniformLocation(prog, 'opaque');
+    this.maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    canvas.addEventListener('webglcontextlost', () => toast('显卡渲染被系统中断了，请刷新页面（照片很多时可以分几批处理）', true, 10000));
+    this.setLut(identityLut());
+  }
+  setImage(src) {
+    const gl = this.gl;
+    this.canvas.width = src.width; this.canvas.height = src.height;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+      gl.texParameteri(gl.TEXTURE_2D, k, v);
+  }
+  setLut(lut) {
+    if (lut === this.lastLut) return;
+    const gl = this.gl, n = Math.round(Math.cbrt(lut.length / 3));
+    const rgba = new Float32Array(n ** 3 * 4);
+    for (let i = 0, j = 0; i < lut.length; i += 3, j += 4) { rgba[j] = lut[i]; rgba[j + 1] = lut[i + 1]; rgba[j + 2] = lut[i + 2]; rgba[j + 3] = 1; }
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_3D, this.lutTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA16F, n, n, n, 0, gl.RGBA, gl.FLOAT, rgba);
+    for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_3D, k, gl.LINEAR);
+    for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.CLAMP_TO_EDGE);
+    this.n = n; this.lastLut = lut;
+  }
+  render(opaque = false) {
+    const gl = this.gl;
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.uniform1f(this.uN, this.n); gl.uniform1i(this.uOpaque, opaque ? 1 : 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+}
+
+// ===== 状态 =====
+const $ = id => document.getElementById(id);
+const PREVIEW_SIDE = 2048, SAMPLE_SIDE = 256, THUMB_SIDE = 400;
+const DEFAULTS = { image: { amount: 0.6, lum: 0.5 }, lut: { amount: 1, lum: 1 } };
+const IMG_EXT = /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif|tiff?)$/i;
+const state = {
+  mode: 'single', input: null, refs: [], selId: null, method: 'smart',
+  params: { image: { ...DEFAULTS.image }, lut: { ...DEFAULTS.lut } },
+  cache: new Map(), lut: null, split: 0.5, view: null,
+  batch: { items: [], mode: 'same', ver: 0, gen: 0, lut: null, focus: null, focusBmp: null, running: false, stop: false },
+};
+let viewR, exportR, thumbR;
+
+function toast(msg, err = false, ms = 3000) {
+  const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), ms);
+}
+const setStatus = s => { $('status').textContent = s; };
+const baseName = n => n.replace(/\.[^.]+$/, '');
+const extOf = type => type === 'image/jpeg' ? 'jpg' : 'png';
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+const yieldUI = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+const selRef = () => state.refs.find(r => r.id === state.selId);
+const kind = () => selRef()?.kind || 'image';
+const P = () => state.params[kind()];
+const effectLabel = () => `效果 ${Math.round(P().amount * 100)}%`;
+
+async function decode(file, opts) {
+  try { return await createImageBitmap(file, { premultiplyAlpha: 'none', ...opts }); }
+  catch (e) {
+    try { if (!opts) return await createImageBitmap(file); } catch (_) {}
+    throw new Error(`「${file.name}」打不开：浏览器不支持这种格式（HEIC / TIFF 请用 Safari，或先转成 JPG）`);
+  }
+}
+async function resizeBitmap(bmp, side) {
+  const s = Math.min(1, side / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * s)), h = Math.max(1, Math.round(bmp.height * s));
+  if (s === 1) return bmp;
+  try { return await createImageBitmap(bmp, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high', premultiplyAlpha: 'none' }); }
+  catch (_) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(bmp, 0, 0, w, h);
+    return await createImageBitmap(c);
+  }
+}
+function sampleOf(bmp) {
+  const s = Math.min(1, SAMPLE_SIDE / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * s)), h = Math.max(1, Math.round(bmp.height * s));
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true }); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(bmp, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data, out = [];
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 8) out.push(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+  return Float64Array.from(out.length ? out : [0.5, 0.5, 0.5]);
+}
+const computeFull = (sample, ref) => ref.kind === 'lut' ? ref.fullOk : buildFull(sample, ref.sample, state.method);
+const methodKey = ref => `${ref.id}|${ref.kind === 'lut' ? 'lut' : state.method}`;
+
+// ===== 大图对比视图 =====
+function viewerShow(bmp) {
+  state.view = bmp; viewR.setImage(bmp);
+  const oc = $('cvOrig'); oc.width = bmp.width; oc.height = bmp.height; oc.getContext('2d').drawImage(bmp, 0, 0);
+  layoutViewer();
+}
+function viewerLut(lut, label) {
+  viewR.setLut(lut || identityLut()); viewR.render(); $('tagR').textContent = label;
+}
+function layoutViewer() {
+  const v = state.view; if (!v || !v.width) return;
+  const st = $('stage'), pad = 40, top = state.mode === 'batch' ? 44 : 0;
+  const s = Math.min((st.clientWidth - pad) / v.width, (st.clientHeight - pad - top) / v.height);
+  const w = Math.max(50, Math.floor(v.width * s)), h = Math.max(50, Math.floor(v.height * s));
+  $('cvOut').style.width = w + 'px'; $('cvOut').style.height = h + 'px';
+  setSplit(state.split);
+}
+function setSplit(v) {
+  state.split = Math.min(1, Math.max(0, v));
+  $('divider').style.left = (state.split * 100) + '%';
+  $('cvOrig').style.clipPath = `inset(0 ${(1 - state.split) * 100}% 0 0)`;
+}
+(() => {
+  const viewer = $('viewer'); let dragging = false;
+  const move = e => { const r = viewer.getBoundingClientRect(); setSplit((e.clientX - r.left) / r.width); };
+  viewer.addEventListener('pointerdown', e => { dragging = true; viewer.setPointerCapture(e.pointerId); move(e); $('stage').focus(); });
+  viewer.addEventListener('pointermove', e => dragging && move(e));
+  viewer.addEventListener('pointerup', () => { dragging = false; });
+  let saved = null;
+  $('stage').addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') { setSplit(state.split - 0.02); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setSplit(state.split + 0.02); e.preventDefault(); }
+    if (e.key === 'Escape' && state.batch.focus) closeFocus();
+    if (e.code === 'Space' && saved === null) { saved = state.split; setSplit(1); e.preventDefault(); }
+  });
+  $('stage').addEventListener('keyup', e => { if (e.code === 'Space' && saved !== null) { setSplit(saved); saved = null; } });
+  window.addEventListener('resize', layoutViewer);
+})();
+
+function updateStage() {
+  const single = state.mode === 'single', b = state.batch;
+  document.querySelectorAll('[data-mode]').forEach(el => el.classList.toggle('hidden', el.dataset.mode !== state.mode));
+  $('tabSingle').classList.toggle('on', single); $('tabBatch').classList.toggle('on', !single);
+  const showViewer = single ? !!state.input : !!b.focusBmp;
+  $('viewer').classList.toggle('hidden', !showViewer);
+  $('emptySingle').classList.toggle('hidden', !single || !!state.input);
+  $('emptyBatch').classList.toggle('hidden', single || b.items.length > 0);
+  $('gridWrap').classList.toggle('hidden', single || !b.items.length || !!b.focusBmp);
+  $('backBtn').classList.toggle('hidden', single || !b.focusBmp);
+  $('stage').style.paddingTop = !single && b.focusBmp ? '64px' : '';
+  $('barHint').textContent = showViewer ? '拖动中线对比 · ← → 微调 · 按住空格看原图' + (single ? '' : ' · Esc 返回') : (single ? '' : '点任意一张放大对比');
+  if (showViewer) layoutViewer();
+}
+async function setMode(m) {
+  if (state.batch.running) { toast('批量导出进行中，请等完成或先点「停止」'); return; }
+  if (m === state.mode) return;
+  state.mode = m;
+  if (m === 'single') { closeFocus(true); if (state.input) viewerShow(state.input.preview); }
+  updateStage(); await refresh();
+}
+
+// ===== 参考图 / LUT =====
+function lutSwatchURL(lut) {
+  const S = 96, c = document.createElement('canvas'); c.width = c.height = S;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(S, S), px = new Float64Array(3);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const h = x / S * 6, l = 0.92 - y / S * 0.84, ch = (1 - Math.abs(2 * l - 1)) * 0.75, X = ch * (1 - Math.abs(h % 2 - 1)), m = l - ch / 2;
+    const [r, g, b] = h < 1 ? [ch, X, 0] : h < 2 ? [X, ch, 0] : h < 3 ? [0, ch, X] : h < 4 ? [0, X, ch] : h < 5 ? [X, 0, ch] : [ch, 0, X];
+    sampleLut(lut, LUT_N, r + m, g + m, b + m, px, 0);
+    const o = (y * S + x) * 4; img.data[o] = px[0] * 255; img.data[o + 1] = px[1] * 255; img.data[o + 2] = px[2] * 255; img.data[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL();
+}
+async function addRefs(files) {
+  let firstNew = null;
+  for (const file of files) {
+    try {
+      let ref;
+      if (/\.cube$/i.test(file.name)) {
+        const fullOk = cubeToFullOk(parseCube(await file.text()));
+        ref = { id: crypto.randomUUID(), kind: 'lut', name: file.name, fullOk, url: lutSwatchURL(finalizeLut(fullOk, 1, 1)) };
+      } else {
+        const bmp = await decode(file), small = await resizeBitmap(bmp, 512);
+        ref = { id: crypto.randomUUID(), kind: 'image', name: file.name, url: URL.createObjectURL(file), sample: sampleOf(small) };
+        if (small !== bmp) small.close(); bmp.close();
+      }
+      state.refs.push(ref); firstNew = firstNew || ref;
+    } catch (e) { toast(`「${file.name}」：${e.message}`, true, 6000); }
+  }
+  if (firstNew) await selectRef(firstNew.id);
+}
+async function selectRef(id) { state.selId = id; renderRefs(); syncAdjUI(); await refresh(); }
+function renderRefs() {
+  const box = $('refs'); box.innerHTML = '';
+  for (const r of state.refs) {
+    const d = document.createElement('div'); d.className = 'ref' + (r.id === state.selId ? ' sel' : ''); d.title = r.name;
+    d.innerHTML = `<img src="${r.url}" alt="">${r.kind === 'lut' ? '<span class="badge">LUT</span>' : ''}<button class="x" title="移除">✕</button>`;
+    d.onclick = async e => {
+      if (e.target.classList.contains('x')) {
+        state.refs = state.refs.filter(x => x !== r);
+        if (r.kind === 'image') URL.revokeObjectURL(r.url);
+        for (const k of [...state.cache.keys()]) if (k.includes(r.id)) state.cache.delete(k);
+        if (state.selId === r.id) state.selId = state.refs[0]?.id ?? null;
+        renderRefs(); syncAdjUI(); await refresh(); return;
+      }
+      if (r.id !== state.selId) await selectRef(r.id);
+    };
+    box.appendChild(d);
+  }
+}
+
+// ===== 调整控件 =====
+function syncAdjUI() {
+  const p = P(), isLut = kind() === 'lut';
+  $('amount').value = Math.round(p.amount * 100); $('lum').value = Math.round(p.lum * 100);
+  $('amountVal').textContent = $('amount').value + '%'; $('lumVal').textContent = $('lum').value + '%';
+  $('method').disabled = isLut;
+  $('adjHint').textContent = isLut
+    ? '导入的 LUT 直接套用，不需要算法；强度 100% = 原样套用，亮度跟随调低可保留原图明暗。'
+    : '亮度跟随 0% = 只换色调、保留原图明暗；100% = 明暗也跟参考图走。默认值按 Polarr 官方 50 组示例校准。';
+}
+$('amount').oninput = $('lum').oninput = () => {
+  const p = P(); p.amount = $('amount').value / 100; p.lum = $('lum').value / 100;
+  $('amountVal').textContent = $('amount').value + '%'; $('lumVal').textContent = $('lum').value + '%';
+  refresh();
+};
+$('method').onchange = () => { state.method = $('method').value; refresh(); };
+$('resetBtn').onclick = () => {
+  state.params[kind()] = { ...DEFAULTS[kind()] };
+  if (kind() === 'image') { state.method = 'smart'; $('method').value = 'smart'; }
+  syncAdjUI(); refresh();
+};
+document.querySelectorAll('input[name=bmode]').forEach(r => r.onchange = () => { state.batch.mode = r.value; refresh(); });
+
+const refresh = () => state.mode === 'single' ? refreshSingle() : refreshBatch();
+
+// ===== 单张 =====
+async function loadInput(file) {
+  setStatus('正在载入原图…');
+  try {
+    const full = await decode(file), w = full.width, h = full.height;
+    const preview = await resizeBitmap(full, PREVIEW_SIDE);
+    if (preview !== full) full.close();
+    if (state.input) { state.input.preview.close(); URL.revokeObjectURL(state.input.url); }
+    state.input = { id: crypto.randomUUID(), file, name: file.name, w, h, preview, sample: sampleOf(preview), url: URL.createObjectURL(file) };
+    for (const k of [...state.cache.keys()]) if (!k.startsWith('uni')) state.cache.delete(k);
+    $('inputImg').src = state.input.url; $('inputName').textContent = file.name; $('inputSize').textContent = `${w} × ${h}`;
+    $('inputDrop').classList.add('hidden'); $('inputInfo').classList.remove('hidden');
+    viewerShow(preview); updateStage();
+    if (Math.min(w, h) < 256) toast('原图比较小（短边不足 256 像素），效果可能不稳定');
+    await refreshSingle();
+  } catch (e) { toast(e.message, true, 6000); setStatus('载入失败'); }
+}
+async function refreshSingle() {
+  const inp = state.input, ref = selRef(), ready = !!(inp && ref);
+  for (const id of ['dlPhoto', 'dlCube', 'dlXmp', 'dlAll']) $(id).disabled = !ready;
+  if (!inp) { setStatus(ref ? '放入一张原图' : '准备就绪'); return; }
+  if (!ref) { state.lut = null; viewerLut(null, '效果（未选参考图）'); setStatus('添加并点选一张参考图'); return; }
+  const key = `${inp.id}|${methodKey(ref)}`;
+  let full = state.cache.get(key);
+  if (!full) {
+    setStatus('正在计算色彩匹配…'); await nextFrame();
+    const t0 = performance.now();
+    full = computeFull(inp.sample, ref); state.cache.set(key, full);
+    setStatus(`匹配完成，用时 ${((performance.now() - t0) / 1000).toFixed(2)} 秒 · 参考：${ref.name}`);
+  } else setStatus(`参考：${ref.name}`);
+  if (state.mode !== 'single' || state.input !== inp) return;
+  const p = P(); state.lut = finalizeLut(full, p.amount, p.lum);
+  viewerLut(state.lut, effectLabel());
+}
+
+// ===== 批量 =====
+function updateBatchCount() {
+  const n = state.batch.items.length;
+  $('bCount').textContent = `${n} 张`;
+  $('bExport').textContent = state.batch.running ? '停止' : (n ? `导出全部 ${n} 张` : '导出全部');
+}
+async function filesFromDrop(dt) {
+  const entries = [...(dt.items || [])].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return [...(dt.files || [])].map(f => ({ file: f, rel: f.name }));
+  const out = [];
+  const walk = async (entry, path) => {
+    if (entry.isFile) out.push({ file: await new Promise((res, rej) => entry.file(res, rej)), rel: path + entry.name });
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) {
+        const list = await new Promise((res, rej) => reader.readEntries(res, rej));
+        if (!list.length) break;
+        for (const e of list) await walk(e, path + entry.name + '/');
+      }
+    }
+  };
+  for (const e of entries) await walk(e, '');
+  return out;
+}
+const asRecs = list => [...list].map(x => x instanceof File ? { file: x, rel: x.webkitRelativePath || x.name } : x);
+
+async function addBatchFiles(list) {
+  const b = state.batch;
+  const recs = asRecs(list).filter(r => IMG_EXT.test(r.file.name) && !r.file.name.startsWith('._'));
+  if (!recs.length) { toast('没有找到可处理的图片'); return; }
+  const seen = new Set(b.items.map(it => it.key));
+  let fails = 0;
+  for (let i = 0; i < recs.length; i++) {
+    const { file, rel } = recs[i], key = `${rel}|${file.size}|${file.lastModified}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    setStatus(`正在载入照片 ${i + 1} / ${recs.length}…`);
+    try {
+      const full = await decode(file), w = full.width, h = full.height;
+      const thumb = await resizeBitmap(full, THUMB_SIDE);
+      if (thumb !== full) full.close();
+      const it = { id: crypto.randomUUID(), key, file, rel, name: file.name, w, h, thumb, sample: sampleOf(thumb), fullKey: null, full: null, lut: null };
+      b.items.push(it); makeTile(it);
+    } catch (e) { fails++; }
+    if (i % 6 === 5) { updateBatchCount(); updateStage(); await yieldUI(); }
+  }
+  b.ver++; updateBatchCount(); updateStage();
+  if (fails) toast(`${fails} 张打不开（可能是 HEIC / TIFF 等浏览器不支持的格式），已跳过`, true, 6000);
+  await refreshBatch();
+}
+function makeTile(it) {
+  const d = document.createElement('div'); d.className = 'tile'; d.title = it.rel;
+  const cv = document.createElement('canvas'); cv.width = it.thumb.width; cv.height = it.thumb.height;
+  cv.getContext('2d').drawImage(it.thumb, 0, 0);
+  const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = it.rel;
+  const st = document.createElement('span'); st.className = 'st hidden';
+  const x = document.createElement('button'); x.className = 'x'; x.title = '移出这一批（不会删除文件）'; x.textContent = '✕';
+  d.append(cv, nm, st, x);
+  d.onclick = e => { if (e.target === x) removeItem(it); else openFocus(it); };
+  it.el = d; it.cv = cv; it.st = st;
+  $('tiles').appendChild(d);
+}
+function setTileStatus(it, text, err = false) {
+  it.st.textContent = text; it.st.classList.toggle('hidden', !text); it.st.classList.toggle('err', err);
+}
+function drawTile(it) {
+  const ctx = it.cv.getContext('2d');
+  if (!it.lut) { ctx.drawImage(it.thumb, 0, 0); return; }
+  thumbR.setImage(it.thumb); thumbR.setLut(it.lut); thumbR.render();
+  ctx.drawImage(thumbR.canvas, 0, 0);
+}
+async function removeItem(it) {
+  const b = state.batch;
+  if (b.running) { toast('导出进行中，先等完成或停止'); return; }
+  b.items = b.items.filter(x => x !== it); it.el.remove(); it.thumb.close(); b.ver++;
+  updateBatchCount(); updateStage(); await refreshBatch();
+}
+$('bClear').onclick = () => {
+  const b = state.batch;
+  if (b.running) { toast('导出进行中，先等完成或停止'); return; }
+  closeFocus(true);
+  for (const it of b.items) it.thumb.close();
+  b.items = []; b.ver++; $('tiles').innerHTML = ''; b.lut = null;
+  updateBatchCount(); updateStage(); refreshBatch();
+};
+const isUnified = ref => state.batch.mode === 'same' || ref.kind === 'lut';
+function unifiedFull(ref) {
+  if (ref.kind === 'lut') return ref.fullOk;
+  const b = state.batch, key = `uni${b.ver}|${methodKey(ref)}`;
+  let full = state.cache.get(key);
+  if (!full) {
+    for (const k of [...state.cache.keys()]) if (k.startsWith('uni') && !k.startsWith(`uni${b.ver}|`)) state.cache.delete(k);
+    full = buildFull(combineSamples(b.items.map(it => it.sample)), ref.sample, state.method);
+    state.cache.set(key, full);
+  }
+  return full;
+}
+function itemFull(it, ref) {
+  const key = methodKey(ref);
+  if (it.fullKey !== key) { it.full = computeFull(it.sample, ref); it.fullKey = key; }
+  return it.full;
+}
+const hasItemFull = (it, ref) => it.fullKey === methodKey(ref);
+
+async function refreshBatch() {
+  const b = state.batch, ref = selRef(), gen = ++b.gen, items = b.items.slice(), p = P();
+  const ready = !!(ref && items.length);
+  $('bExport').disabled = !ready && !b.running;
+  $('bCube').disabled = $('bXmp').disabled = !ready || !isUnified(ref);
+  updateBatchCount();
+  if (!ready) {
+    b.lut = null;
+    for (const it of items) { it.lut = null; setTileStatus(it, ''); drawTile(it); }
+    if (b.focusBmp) viewerLut(null, '效果（未选参考图）');
+    setStatus(items.length ? '添加并点选一张参考图（或导入 .cube）' : '把照片或文件夹拖进来');
+    return;
+  }
+  if (isUnified(ref)) {
+    if (ref.kind !== 'lut' && !state.cache.has(`uni${b.ver}|${methodKey(ref)}`)) {
+      setStatus(`正在把 ${items.length} 张照片作为整体匹配…`); await nextFrame();
+      if (gen !== b.gen) return;
+    }
+    const lut = finalizeLut(unifiedFull(ref), p.amount, p.lum);
+    if (gen !== b.gen) return;
+    b.lut = lut;
+    if (b.focusBmp) viewerLut(lut, effectLabel());
+    for (let i = 0; i < items.length; i++) {
+      items[i].lut = lut; setTileStatus(items[i], ''); drawTile(items[i]);
+      if (i % 16 === 15) { await yieldUI(); if (gen !== b.gen) return; }
+    }
+    setStatus(`统一效果 · 参考：${ref.name} · ${items.length} 张`);
+  } else {
+    b.lut = null;
+    const order = b.focus ? [b.focus, ...items.filter(x => x !== b.focus)] : items;
+    for (let i = 0; i < order.length; i++) {
+      const it = order[i];
+      if (!hasItemFull(it, ref)) {
+        setTileStatus(it, '计算中…'); setStatus(`逐张匹配中 ${i + 1} / ${order.length}…`);
+        await yieldUI(); if (gen !== b.gen) return;
+      }
+      it.lut = finalizeLut(itemFull(it, ref), p.amount, p.lum);
+      setTileStatus(it, ''); drawTile(it);
+      if (it === b.focus && b.focusBmp) viewerLut(it.lut, effectLabel());
+      if (i % 8 === 7) { await yieldUI(); if (gen !== b.gen) return; }
+    }
+    setStatus(`逐张匹配 · 参考：${ref.name} · ${items.length} 张`);
+  }
+}
+function lutForItem(it) {
+  const ref = selRef(), p = P();
+  if (it.lut) return it.lut;
+  return isUnified(ref) ? (state.batch.lut = finalizeLut(unifiedFull(ref), p.amount, p.lum)) : finalizeLut(itemFull(it, ref), p.amount, p.lum);
+}
+async function openFocus(it) {
+  const b = state.batch; b.focus = it; setStatus(`正在载入大图：${it.rel}`);
+  try {
+    const full = await decode(it.file), pv = await resizeBitmap(full, PREVIEW_SIDE);
+    if (pv !== full) full.close();
+    if (b.focus !== it || state.mode !== 'batch') { pv.close(); return; }
+    if (b.focusBmp) b.focusBmp.close();
+    b.focusBmp = pv; viewerShow(pv); updateStage();
+    viewerLut(it.lut, it.lut ? effectLabel() : '效果（未选参考图）');
+    setStatus(`${it.rel} · ${it.w} × ${it.h}`); $('stage').focus();
+  } catch (e) { toast(e.message, true); b.focus = null; updateStage(); }
+}
+function closeFocus(silent) {
+  const b = state.batch;
+  if (b.focusBmp) { if (state.view === b.focusBmp) state.view = null; b.focusBmp.close(); b.focusBmp = null; }
+  b.focus = null;
+  if (!silent) { updateStage(); refreshBatch(); }
+}
+$('backBtn').onclick = () => closeFocus();
+
+// ===== 导出 =====
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 120000);
+}
+async function renderFullRes(file, lut, type) {
+  if (!exportR) exportR = new LutRenderer(document.createElement('canvas'));
+  let bmp = await decode(file), shrunk = false;
+  if (Math.max(bmp.width, bmp.height) > exportR.maxSize) {
+    const small = await resizeBitmap(bmp, exportR.maxSize); bmp.close(); bmp = small; shrunk = true;
+  }
+  exportR.setImage(bmp); exportR.setLut(lut); exportR.render(type === 'image/jpeg'); bmp.close();
+  const blob = await new Promise(r => exportR.canvas.toBlob(r, type, 0.95));
+  if (!blob) throw new Error('导出失败：图片太大或内存不足');
+  return { blob, shrunk };
+}
+const stampNow = () => {
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+};
+const presetName = () => `${baseName(selRef().name)}-${baseName(state.input.name)}`;
+async function withBusy(label, fn) {
+  setStatus(label); await nextFrame();
+  try { await fn(); setStatus('已导出'); } catch (e) { console.error(e); toast(e.message || '导出失败', true, 6000); setStatus('导出失败'); }
+}
+$('dlPhoto').onclick = () => withBusy('正在按原图分辨率导出…', async () => {
+  const type = $('fmt').value, { blob, shrunk } = await renderFullRes(state.input.file, state.lut, type);
+  if (shrunk) toast('图片超过显卡上限，已按上限尺寸输出');
+  download(blob, `${baseName(state.input.name)}_匹配_${baseName(selRef().name)}.${extOf(type)}`);
+});
+$('dlCube').onclick = () => withBusy('正在生成 LUT…', async () => {
+  download(new Blob([lutToCube(state.lut, presetName())], { type: 'text/plain' }), `${presetName()}.cube`);
+});
+$('dlXmp').onclick = () => withBusy('正在生成 LR 预设…', async () => {
+  download(new Blob([await lutToXmp(state.lut, presetName())], { type: 'application/rdf+xml' }), `${presetName()}.xmp`);
+});
+$('dlAll').onclick = () => withBusy('正在打包…', async () => {
+  const type = $('fmt').value, name = presetName(), enc = new TextEncoder();
+  const { blob } = await renderFullRes(state.input.file, state.lut, type);
+  download(makeZip([
+    { name: `${name}.${extOf(type)}`, data: new Uint8Array(await blob.arrayBuffer()) },
+    { name: `${name}.cube`, data: enc.encode(lutToCube(state.lut, name)) },
+    { name: `${name}.xmp`, data: enc.encode(await lutToXmp(state.lut, name)) },
+  ]), `${name}.zip`);
+});
+const batchLutName = () => `${baseName(selRef().name)}-批量统一`;
+$('bCube').onclick = () => withBusy('正在生成 LUT…', async () => {
+  const lut = state.batch.lut || lutForItem(state.batch.items[0]);
+  download(new Blob([lutToCube(lut, batchLutName())], { type: 'text/plain' }), `${batchLutName()}.cube`);
+});
+$('bXmp').onclick = () => withBusy('正在生成 LR 预设…', async () => {
+  const lut = state.batch.lut || lutForItem(state.batch.items[0]);
+  download(new Blob([await lutToXmp(lut, batchLutName())], { type: 'application/rdf+xml' }), `${batchLutName()}.xmp`);
+});
+
+$('bExport').onclick = async () => {
+  const b = state.batch;
+  if (b.running) { b.stop = true; $('bExport').textContent = '正在停止…'; return; }
+  const ref = selRef(), items = b.items.slice();
+  if (!ref || !items.length) return;
+  const type = $('fmt').value, ext = extOf(type), folder = `调色输出_${stampNow()}`;
+  let outDir = null;
+  if ('showDirectoryPicker' in window) {
+    try {
+      const root = await window.showDirectoryPicker({ id: 'acm-out', mode: 'readwrite' });
+      outDir = await root.getDirectoryHandle(folder, { create: true });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      toast('无法写入这个文件夹，改为打包 zip 下载', true);
+    }
+  }
+  b.running = true; b.stop = false; updateBatchCount(); $('bExport').disabled = false;
+  $('bProgBox').classList.remove('hidden');
+  const used = new Set(), fails = [], t0 = performance.now(), total = items.length;
+  let done = 0, shrunk = 0, zipEntries = [], zipBytes = 0, zipPart = 0;
+  const flushZip = () => {
+    if (!zipEntries.length) return;
+    zipPart++; download(makeZip(zipEntries), `${folder}${zipPart > 1 ? '_' + zipPart : ''}.zip`);
+    zipEntries = []; zipBytes = 0;
+  };
+  const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  const report = () => {
+    const el = (performance.now() - t0) / 1000, left = done ? el / done * (total - done) : 0;
+    $('bProg').style.width = (done / total * 100) + '%';
+    $('bText').textContent = `已完成 ${done} / ${total} · 已用 ${mmss(el)} · 预计剩余 ${mmss(left)}${fails.length ? ` · 失败 ${fails.length}` : ''}`;
+    setStatus(`批量导出中 ${done} / ${total}`);
+  };
+  report();
+  for (const it of items) {
+    if (b.stop) break;
+    try {
+      const { blob, shrunk: s } = await renderFullRes(it.file, lutForItem(it), type);
+      if (s) shrunk++;
+      const parts = it.rel.split('/'), sub = parts.length > 2 ? parts.slice(1, -1) : [];
+      const pathOf = n => [...sub, n].join('/');
+      let name = `${baseName(it.name)}_调色.${ext}`, k = 2;
+      while (used.has(pathOf(name))) name = `${baseName(it.name)}_调色_${k++}.${ext}`;
+      used.add(pathOf(name));
+      if (outDir) {
+        let dir = outDir;
+        for (const s2 of sub) dir = await dir.getDirectoryHandle(s2, { create: true });
+        const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+        await w.write(blob); await w.close();
+      } else {
+        zipEntries.push({ name: pathOf(name), data: new Uint8Array(await blob.arrayBuffer()) });
+        zipBytes += blob.size;
+        if (zipBytes > 1.5e9) flushZip();
+      }
+      setTileStatus(it, '✓ 已导出');
+    } catch (e) { console.error(it.rel, e); fails.push(it.rel); setTileStatus(it, '导出失败', true); }
+    done++; report(); await yieldUI();
+  }
+  flushZip();
+  const stopped = b.stop;
+  b.running = false; b.stop = false; updateBatchCount(); $('bExport').disabled = false;
+  $('bText').textContent += stopped ? ' · 已停止' : ' · 全部完成';
+  setStatus(stopped ? `已停止，导出了 ${done - fails.length} 张` : `批量导出完成：${done - fails.length} 张`);
+  if (shrunk) toast(`${shrunk} 张超过显卡上限，已按上限尺寸输出`, false, 6000);
+  if (fails.length) toast(`有 ${fails.length} 张失败：${fails.slice(0, 3).join('、')}${fails.length > 3 ? ' 等' : ''}`, true, 8000);
+  else if (!stopped) toast(outDir ? `已保存到「${folder}」文件夹` : (zipPart > 1 ? `已分 ${zipPart} 个 zip 下载` : '已打包下载'), false, 5000);
+};
+window.addEventListener('beforeunload', e => { if (state.batch.running) { e.preventDefault(); e.returnValue = ''; } });
+
+// ===== 文件选择与拖拽 =====
+$('tabSingle').onclick = () => setMode('single');
+$('tabBatch').onclick = () => setMode('batch');
+$('inputDrop').onclick = $('inputReplace').onclick = () => $('fileInput').click();
+$('refDrop').onclick = () => $('fileRefs').click();
+$('lutImport').onclick = () => $('fileLut').click();
+$('batchDrop').onclick = $('bAddFiles').onclick = () => $('fileBatch').click();
+$('bAddDir').onclick = () => $('dirBatch').click();
+$('fileInput').onchange = e => { if (e.target.files[0]) loadInput(e.target.files[0]); e.target.value = ''; };
+$('fileRefs').onchange = $('fileLut').onchange = e => { addRefs([...e.target.files]); e.target.value = ''; };
+$('fileBatch').onchange = $('dirBatch').onchange = e => { addBatchFiles([...e.target.files]); e.target.value = ''; };
+
+function dropZone(el, handler) {
+  el.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', async e => {
+    e.preventDefault(); e.stopPropagation(); el.classList.remove('over');
+    const recs = await filesFromDrop(e.dataTransfer);
+    if (recs.length) handler(recs);
+  });
+}
+const isCube = r => /\.cube$/i.test(r.file.name), isImg = r => IMG_EXT.test(r.file.name);
+dropZone($('inputDrop'), recs => { const r = recs.find(isImg); if (r) loadInput(r.file); });
+dropZone($('inputInfo'), recs => { const r = recs.find(isImg); if (r) loadInput(r.file); });
+dropZone($('refDrop'), recs => addRefs(recs.filter(r => isImg(r) || isCube(r)).map(r => r.file)));
+dropZone($('refs'), recs => addRefs(recs.filter(r => isImg(r) || isCube(r)).map(r => r.file)));
+dropZone($('batchDrop'), recs => addBatchFiles(recs.filter(isImg)));
+dropZone($('stage'), async recs => {
+  const cubes = recs.filter(isCube).map(r => r.file);
+  let imgs = recs.filter(isImg);
+  if (state.mode === 'batch') { if (cubes.length) await addRefs(cubes); if (imgs.length) await addBatchFiles(imgs); return; }
+  if (!state.input && imgs.length) { await loadInput(imgs[0].file); imgs = imgs.slice(1); }
+  const refs = [...imgs.map(r => r.file), ...cubes];
+  if (refs.length) addRefs(refs);
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => e.preventDefault());
+
+// ===== 使用说明 & 启动 =====
+$('helpBtn').onclick = () => $('helpDlg').showModal();
+$('helpClose').onclick = () => { $('helpDlg').close(); try { localStorage.setItem('acm_help_seen', '1'); } catch (_) {} };
+
+(() => {
+  const miss = [];
+  try { viewR = new LutRenderer($('cvOut')); thumbR = new LutRenderer(document.createElement('canvas')); }
+  catch (e) { miss.push('WebGL2（显卡渲染）'); }
+  if (!window.createImageBitmap) miss.push('图片解码');
+  if (!window.CompressionStream) miss.push('压缩（导出 LR 预设需要）');
+  if (miss.length) {
+    $('banner').textContent = `当前浏览器缺少：${miss.join('、')}。请用新版 Chrome / Edge / Safari 打开本页面。`;
+    $('banner').classList.remove('hidden');
+  }
+  try { if (!localStorage.getItem('acm_help_seen') && !miss.length) $('helpDlg').showModal(); } catch (_) {}
+  updateStage(); syncAdjUI();
+})();
+</script>
+</body>
+</html>
