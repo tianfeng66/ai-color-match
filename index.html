@@ -130,6 +130,12 @@
       <div id="refDrop" class="drop">点击添加参考图或拖进来（可多选）</div>
       <p class="hint">已有调色文件？<button class="link" id="lutImport">导入 .cube LUT</button> 当作参考直接套用。</p>
       <div id="refs" class="refs"></div>
+      <div id="refTune" class="hidden">
+        <div class="row"><label>明度</label><input id="refLight" type="range" min="-100" max="100" value="0" /><span class="val" id="refLightVal">0</span></div>
+        <div class="row"><label>色相</label><input id="refHue" type="range" min="-180" max="180" value="0" /><span class="val" id="refHueVal">0</span></div>
+        <div class="row"><label>色调</label><input id="refTint" type="range" min="-100" max="100" value="0" /><span class="val" id="refTintVal">0</span></div>
+        <p class="hint">改的是参考图、再拿去匹配：明度左暗右亮，色相转动颜色，色调左偏绿、右偏洋红。双击滑块归零。不改参考图原文件。</p>
+      </div>
     </div>
 
     <div class="card">
@@ -217,7 +223,7 @@
   <h4>单张调色</h4>
   <ol>
     <li>「① 原图」放入要调色的照片。</li>
-    <li>「② 参考图」放入想要的色调样图（可以多张），点选一张；也可以导入现成的 .cube LUT。</li>
+    <li>「② 参考图」放入想要的色调样图（可以多张），点选一张；也可以导入现成的 .cube LUT。选中图片参考后，可以先调它的明度、色相、色调，再拿去匹配。</li>
     <li>拖动「强度」「亮度跟随」。大图中线可左右拖，左边原图、右边效果；按住空格看原图。</li>
     <li>导出原分辨率图片、.cube（PS / PR / 达芬奇 / FCPX）或 .xmp（Lightroom / ACR 预设）。</li>
   </ol>
@@ -231,6 +237,7 @@
   <h4>小贴士</h4>
   <ul>
     <li>亮度跟随 0% = 只换色调、保留原图明暗；100% = 明暗也跟参考图。</li>
+    <li>参考图的明度 / 色相 / 色调只改匹配用的那张参考，缩略图会跟着变，原文件不动。导入的 .cube 不能调这三项。</li>
     <li>内容差别很大的两张图，用「线性匹配」最稳，不会出怪色。</li>
     <li>HEIC / TIFF 只有 Safari 能打开，Chrome 里请先转成 JPG。</li>
     <li>批量导出时可以切到别的窗口，但不要关掉这个网页。</li>
@@ -782,8 +789,37 @@ function sampleOf(bmp) {
   for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 8) out.push(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
   return Float64Array.from(out.length ? out : [0.5, 0.5, 0.5]);
 }
+// 参考图在匹配前可先调：明度加减 OKLab 亮度，色相转动 a/b，色调沿绿↔洋红（a 轴）偏移。
+function tuneSample(raw, tune) {
+  if (!tune || (!tune.light && !tune.hue && !tune.tint)) return raw;
+  const ok = rgbToOk(raw);
+  const rad = tune.hue * Math.PI / 180, co = Math.cos(rad), si = Math.sin(rad);
+  const dL = tune.light / 100 * 0.35, dA = tune.tint / 100 * 0.15;
+  for (let i = 0; i < ok.length; i += 3) {
+    const a = ok[i + 1], b = ok[i + 2];
+    ok[i] = Math.min(1, Math.max(0, ok[i] + dL));
+    ok[i + 1] = a * co - b * si + dA;
+    ok[i + 2] = a * si + b * co;
+  }
+  const rgb = okToRgb(ok);
+  for (let i = 0; i < rgb.length; i++) rgb[i] = rgb[i] < 0 ? 0 : rgb[i] > 1 ? 1 : rgb[i];
+  return rgb;
+}
+function tunedThumbURL(bmp, tune) {
+  const w = bmp.width, h = bmp.height, c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h), d = img.data, rgb = new Float64Array(w * h * 3);
+  for (let i = 0, j = 0; i < d.length; i += 4, j += 3) { rgb[j] = d[i] / 255; rgb[j + 1] = d[i + 1] / 255; rgb[j + 2] = d[i + 2] / 255; }
+  const out = tuneSample(rgb, tune);
+  for (let i = 0, j = 0; i < d.length; i += 4, j += 3) { d[i] = out[j] * 255; d[i + 1] = out[j + 1] * 255; d[i + 2] = out[j + 2] * 255; }
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL('image/jpeg', 0.85);
+}
+const tuneKey = ref => ref.tune ? `${ref.tune.light},${ref.tune.hue},${ref.tune.tint}` : '0,0,0';
 const computeFull = (sample, ref) => ref.kind === 'lut' ? ref.fullOk : buildFull(sample, ref.sample, state.method);
-const methodKey = ref => `${ref.id}|${ref.kind === 'lut' ? 'lut' : state.method}`;
+const methodKey = ref => `${ref.id}|${ref.kind === 'lut' ? 'lut' : state.method + '|' + tuneKey(ref)}`;
 
 // ===== 大图对比视图 =====
 function viewerShow(bmp) {
@@ -869,27 +905,30 @@ async function addRefs(files) {
         ref = { id: crypto.randomUUID(), kind: 'lut', name: file.name, fullOk, url: lutSwatchURL(finalizeLut(fullOk, 1, 1)) };
       } else {
         const bmp = await decode(file), small = await resizeBitmap(bmp, 512);
-        ref = { id: crypto.randomUUID(), kind: 'image', name: file.name, url: URL.createObjectURL(file), sample: sampleOf(small) };
-        if (small !== bmp) small.close(); bmp.close();
+        const raw = sampleOf(small);
+        ref = { id: crypto.randomUUID(), kind: 'image', name: file.name, url: URL.createObjectURL(file),
+                bmp: small, raw, tune: { light: 0, hue: 0, tint: 0 }, sample: raw };
+        if (small !== bmp) bmp.close();
       }
       state.refs.push(ref); firstNew = firstNew || ref;
     } catch (e) { toast(`「${file.name}」：${e.message}`, true, 6000); }
   }
   if (firstNew) await selectRef(firstNew.id);
 }
-async function selectRef(id) { state.selId = id; renderRefs(); syncAdjUI(); await refresh(); }
+async function selectRef(id) { state.selId = id; renderRefs(); syncAdjUI(); syncRefTune(); await refresh(); }
 function renderRefs() {
   const box = $('refs'); box.innerHTML = '';
   for (const r of state.refs) {
-    const d = document.createElement('div'); d.className = 'ref' + (r.id === state.selId ? ' sel' : ''); d.title = r.name;
-    d.innerHTML = `<img src="${r.url}" alt="">${r.kind === 'lut' ? '<span class="badge">LUT</span>' : ''}<button class="x" title="移除">✕</button>`;
+    const d = document.createElement('div'); d.className = 'ref' + (r.id === state.selId ? ' sel' : ''); d.title = r.name; d.dataset.id = r.id;
+    const src = r.thumbData || r.url;
+    d.innerHTML = `<img src="${src}" alt="">${r.kind === 'lut' ? '<span class="badge">LUT</span>' : ''}<button class="x" title="移除">✕</button>`;
     d.onclick = async e => {
       if (e.target.classList.contains('x')) {
         state.refs = state.refs.filter(x => x !== r);
-        if (r.kind === 'image') URL.revokeObjectURL(r.url);
+        if (r.kind === 'image') { URL.revokeObjectURL(r.url); r.bmp?.close(); }
         for (const k of [...state.cache.keys()]) if (k.includes(r.id)) state.cache.delete(k);
         if (state.selId === r.id) state.selId = state.refs[0]?.id ?? null;
-        renderRefs(); syncAdjUI(); await refresh(); return;
+        renderRefs(); syncAdjUI(); syncRefTune(); await refresh(); return;
       }
       if (r.id !== state.selId) await selectRef(r.id);
     };
@@ -913,6 +952,37 @@ $('amount').oninput = $('lum').oninput = () => {
   refresh();
 };
 $('method').onchange = () => { state.method = $('method').value; refresh(); };
+
+function syncRefTune() {
+  const ref = selRef(), on = ref?.kind === 'image';
+  $('refTune').classList.toggle('hidden', !on);
+  if (!on) return;
+  const t = ref.tune;
+  $('refLight').value = t.light; $('refHue').value = t.hue; $('refTint').value = t.tint;
+  $('refLightVal').textContent = fmtTune(t.light);
+  $('refHueVal').textContent = fmtTune(t.hue);
+  $('refTintVal').textContent = fmtTune(t.tint);
+}
+const fmtTune = v => (v > 0 ? '+' : '') + v;
+function applyRefTune() {
+  const ref = selRef();
+  if (!ref || ref.kind !== 'image') return;
+  ref.tune = { light: +$('refLight').value, hue: +$('refHue').value, tint: +$('refTint').value };
+  ref.sample = tuneSample(ref.raw, ref.tune);
+  ref.thumbData = (ref.tune.light || ref.tune.hue || ref.tune.tint) ? tunedThumbURL(ref.bmp, ref.tune) : null;
+  const keep = methodKey(ref);
+  for (const k of [...state.cache.keys()]) if (k.includes(ref.id) && !k.endsWith(keep) && !k.includes('|' + keep)) state.cache.delete(k);
+  $('refLightVal').textContent = fmtTune(ref.tune.light);
+  $('refHueVal').textContent = fmtTune(ref.tune.hue);
+  $('refTintVal').textContent = fmtTune(ref.tune.tint);
+  const img = document.querySelector(`#refs .ref[data-id="${CSS.escape(ref.id)}"] img`);
+  if (img) img.src = ref.thumbData || ref.url;
+  refresh();
+}
+for (const id of ['refLight', 'refHue', 'refTint']) {
+  $(id).oninput = applyRefTune;
+  $(id).ondblclick = () => { $(id).value = 0; applyRefTune(); };
+}
 $('resetBtn').onclick = () => {
   state.params[kind()] = { ...DEFAULTS[kind()] };
   if (kind() === 'image') { state.method = 'smart'; $('method').value = 'smart'; }
