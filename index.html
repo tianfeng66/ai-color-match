@@ -103,7 +103,7 @@
 <div class="app">
   <aside>
     <div class="head"><h1>AI 色彩匹配 · 本地版</h1><button class="link" id="helpBtn">使用说明</button></div>
-    <div class="sub">v2.4 · 把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
+    <div class="sub">v2.4.1 · 把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
     <div class="tabs"><button id="tabSingle" class="on">单张调色</button><button id="tabBatch">批量调色</button></div>
 
     <div class="card" data-mode="single">
@@ -686,9 +686,14 @@ class LutRenderer {
     const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false, antialias: false });
     if (!gl) throw new Error('当前浏览器不支持 WebGL2，请用新版 Chrome / Edge / Safari 打开');
     this.gl = gl;
+    // 上传的图片第一行在纹理底部，读原图时要翻 Y。画进中间图之后纹理已经是正的，模糊和输出不能再翻。
     const vs = `#version 300 es
-      in vec2 p; out vec2 uv;
-      void main() { uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); gl_Position = vec4(p, 0.0, 1.0); }`;
+      in vec2 p; uniform float flipY; out vec2 uv;
+      void main() {
+        float y = mix(p.y * 0.5 + 0.5, 0.5 - p.y * 0.5, flipY);
+        uv = vec2(p.x * 0.5 + 0.5, y);
+        gl_Position = vec4(p, 0.0, 1.0);
+      }`;
     const fs = `#version 300 es
       precision highp float; precision highp sampler3D;
       uniform sampler2D img; uniform sampler3D lut; uniform float n; uniform bool opaque;
@@ -776,6 +781,12 @@ class LutRenderer {
       return p;
     };
     this.prog = prog(fs); this.copyProg = prog(copyFs); this.blurProg = prog(blurFs); this.finishProg = prog(finishFs);
+    this.uFlip = {
+      lut: gl.getUniformLocation(this.prog, 'flipY'),
+      copy: gl.getUniformLocation(this.copyProg, 'flipY'),
+      blur: gl.getUniformLocation(this.blurProg, 'flipY'),
+      finish: gl.getUniformLocation(this.finishProg, 'flipY'),
+    };
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     for (const p of [this.prog, this.copyProg, this.blurProg, this.finishProg]) {
@@ -830,6 +841,7 @@ class LutRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
     gl.viewport(0, 0, dst.w, dst.h);
     gl.useProgram(this.copyProg);
+    gl.uniform1f(this.uFlip.copy, 0);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
     this.draw();
   }
@@ -838,6 +850,7 @@ class LutRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
     gl.viewport(0, 0, dst.w, dst.h);
     gl.useProgram(this.blurProg);
+    gl.uniform1f(this.uFlip.blur, 0);
     gl.uniform2f(this.uBlurDir, horizontal ? step / dst.w : 0, horizontal ? 0 : step / dst.h);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
     this.draw();
@@ -898,6 +911,7 @@ class LutRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, on ? this.target('color', w, h).fb : null);
     gl.viewport(0, 0, w, h);
     gl.useProgram(this.prog);
+    gl.uniform1f(this.uFlip.lut, 1);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_3D, this.lutTex);
     gl.uniform1f(this.uN, this.n); gl.uniform1i(this.uOpaque, opaque ? 1 : 0);
@@ -909,6 +923,7 @@ class LutRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, w, h);
     gl.useProgram(this.finishProg);
+    gl.uniform1f(this.uFlip.finish, 0);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.target('color', w, h).tex);
     gl.uniform1i(this.uUseBlur, blurTex ? 1 : 0);
     if (blurTex) { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, blurTex); }
