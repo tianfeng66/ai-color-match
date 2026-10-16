@@ -99,7 +99,7 @@
 <div class="app">
   <aside>
     <div class="head"><h1>AI 色彩匹配 · 本地版</h1><button class="link" id="helpBtn">使用说明</button></div>
-    <div class="sub">把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
+    <div class="sub">v2.3 · 把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
     <div class="tabs"><button id="tabSingle" class="on">单张调色</button><button id="tabBatch">批量调色</button></div>
 
     <div class="card" data-mode="single">
@@ -119,10 +119,10 @@
         <button class="btn" id="bAddDir">添加文件夹</button>
         <button class="btn" id="bClear">清空</button>
       </div>
-      <label class="opt"><input type="radio" name="bmode" value="same" checked />
-        <div>统一效果<small>整批照片作为一个整体和参考图匹配，所有照片用同一个 LUT，风格最统一。</small></div></label>
-      <label class="opt"><input type="radio" name="bmode" value="each" />
-        <div>逐张匹配<small>每张照片各自和参考图匹配，适合明暗、场景差别很大的一批照片。</small></div></label>
+      <label class="opt"><input type="radio" name="bmode" value="each" checked />
+        <div>逐张匹配<small>每张都按「单张调色」的方式单独匹配，和 Polarr 官网一样。同一张参考图，颜色不会发灰。</small></div></label>
+      <label class="opt"><input type="radio" name="bmode" value="same" />
+        <div>统一效果<small>用这批里最接近中间色的一张，按单张的方式算出一个 LUT，再套到每一张。不会把所有照片的颜色混在一起，避免发灰。</small></div></label>
     </div>
 
     <div class="card">
@@ -230,7 +230,7 @@
   <h4>批量调色</h4>
   <ol>
     <li>切到「批量调色」，把一批照片或整个文件夹拖进来。</li>
-    <li>选参考图或 LUT，选「统一效果」（整批同一个 LUT，风格统一）或「逐张匹配」（每张各算一次）。</li>
+    <li>选参考图或 LUT。默认「逐张匹配」：每张都按单张调色的方式算，和单独调一张一致。要整批共用一个 LUT，再选「统一效果」。</li>
     <li>网格里实时显示每张效果，点一张可放大对比；不要的照片点右上角 ✕ 移出。</li>
     <li>点「导出全部」→ 选一个保存位置，会新建「调色输出_日期时间」文件夹，子文件夹结构保持不变。Safari / Firefox 会打包成 zip 下载。</li>
   </ol>
@@ -657,13 +657,14 @@ function cubeToFullOk({ n, data, dmin, dmax }) {
   return rgbToOk(rgb);
 }
 
-// 多张照片合并取样（统一效果用），总点数封顶避免太慢
+// 多张照片合并取样，总点数封顶避免太慢
 function combineSamples(samples, cap = 150000) {
   const total = samples.reduce((s, a) => s + a.length / 3, 0), stride = Math.max(1, Math.ceil(total / cap));
   const out = [];
   for (const a of samples) for (let i = 0; i < a.length; i += 3 * stride) out.push(a[i], a[i + 1], a[i + 2]);
   return Float64Array.from(out);
 }
+
 </script>
 
 <script>
@@ -744,7 +745,7 @@ const state = {
   mode: 'single', input: null, refs: [], selId: null, method: 'smart',
   params: { image: { ...DEFAULTS.image }, lut: { ...DEFAULTS.lut } },
   cache: new Map(), lut: null, split: 0.5, view: null,
-  batch: { items: [], mode: 'same', ver: 0, gen: 0, lut: null, focus: null, focusBmp: null, running: false, stop: false },
+  batch: { items: [], mode: 'each', ver: 0, gen: 0, lut: null, focus: null, focusBmp: null, running: false, stop: false },
 };
 let viewR, exportR, thumbR;
 
@@ -1067,8 +1068,11 @@ async function addBatchFiles(list) {
     try {
       const full = await decode(file), w = full.width, h = full.height;
       const thumb = await resizeBitmap(full, THUMB_SIDE);
+      const forSample = await resizeBitmap(full, SAMPLE_SIDE);
+      const sample = sampleOf(forSample);
       if (thumb !== full) full.close();
-      const it = { id: crypto.randomUUID(), key, file, rel, name: file.name, w, h, thumb, sample: sampleOf(thumb), fullKey: null, full: null, lut: null };
+      if (forSample !== full && forSample !== thumb) forSample.close();
+      const it = { id: crypto.randomUUID(), key, file, rel, name: file.name, w, h, thumb, sample, fullKey: null, full: null, lut: null };
       b.items.push(it); makeTile(it);
     } catch (e) { fails++; }
     if (i % 6 === 5) { updateBatchCount(); updateStage(); await yieldUI(); }
@@ -1113,15 +1117,52 @@ $('bClear').onclick = () => {
   updateBatchCount(); updateStage(); refreshBatch();
 };
 const isUnified = ref => state.batch.mode === 'same' || ref.kind === 'lut';
+const unifiedKey = ref => `uni${state.batch.ver}|${methodKey(ref)}`;
+function dropStaleUni() {
+  const prefix = `uni${state.batch.ver}|`;
+  for (const k of [...state.cache.keys()]) if (k.startsWith('uni') && !k.startsWith(prefix)) state.cache.delete(k);
+}
+// 挑平均色最接近整批中位色的那一张，用它的单张匹配结果当统一 LUT。
+// 以前把所有照片像素堆在一起匹配，颜色一多就会被压灰。
+function anchorIndex(samples) {
+  const means = samples.map(s => meanOf(rgbToOk(s)));
+  const med = [0, 1, 2].map(c => {
+    const col = means.map(m => m[c]).sort((a, b) => a - b);
+    const n = col.length, mid = n >> 1;
+    return n & 1 ? col[mid] : (col[mid - 1] + col[mid]) * 0.5;
+  });
+  let best = 0, bd = Infinity;
+  means.forEach((m, i) => {
+    const d = Math.hypot(m[0] - med[0], m[1] - med[1], m[2] - med[2]);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
 function unifiedFull(ref) {
   if (ref.kind === 'lut') return ref.fullOk;
-  const b = state.batch, key = `uni${b.ver}|${methodKey(ref)}`;
-  let full = state.cache.get(key);
-  if (!full) {
-    for (const k of [...state.cache.keys()]) if (k.startsWith('uni') && !k.startsWith(`uni${b.ver}|`)) state.cache.delete(k);
-    full = buildFull(combineSamples(b.items.map(it => it.sample)), ref.sample, state.method);
-    state.cache.set(key, full);
+  const key = unifiedKey(ref);
+  const hit = state.cache.get(key);
+  if (hit) return hit;
+  dropStaleUni();
+  const items = state.batch.items;
+  const full = itemFull(items[anchorIndex(items.map(it => it.sample))], ref);
+  state.cache.set(key, full);
+  return full;
+}
+async function prepareUnified(ref, items, gen) {
+  if (ref.kind === 'lut') return ref.fullOk;
+  const key = unifiedKey(ref);
+  if (state.cache.has(key)) return state.cache.get(key);
+  dropStaleUni();
+  const it = items[anchorIndex(items.map(x => x.sample))];
+  if (!hasItemFull(it, ref)) {
+    setStatus(`统一效果：用最接近中间色的「${it.name}」按单张方式匹配…`);
+    await yieldUI();
+    if (gen !== state.batch.gen) return null;
   }
+  const full = itemFull(it, ref);
+  if (gen !== state.batch.gen) return null;
+  state.cache.set(key, full);
   return full;
 }
 function itemFull(it, ref) {
@@ -1145,11 +1186,9 @@ async function refreshBatch() {
     return;
   }
   if (isUnified(ref)) {
-    if (ref.kind !== 'lut' && !state.cache.has(`uni${b.ver}|${methodKey(ref)}`)) {
-      setStatus(`正在把 ${items.length} 张照片作为整体匹配…`); await nextFrame();
-      if (gen !== b.gen) return;
-    }
-    const lut = finalizeLut(unifiedFull(ref), p.amount, p.lum);
+    const full = await prepareUnified(ref, items, gen);
+    if (!full || gen !== b.gen) return;
+    const lut = finalizeLut(full, p.amount, p.lum);
     if (gen !== b.gen) return;
     b.lut = lut;
     if (b.focusBmp) viewerLut(lut, effectLabel());
@@ -1157,7 +1196,7 @@ async function refreshBatch() {
       items[i].lut = lut; setTileStatus(items[i], ''); drawTile(items[i]);
       if (i % 16 === 15) { await yieldUI(); if (gen !== b.gen) return; }
     }
-    setStatus(`统一效果 · 参考：${ref.name} · ${items.length} 张`);
+    setStatus(`统一效果 · 按中间色那张照片匹配后套到整批 · 参考：${ref.name} · ${items.length} 张`);
   } else {
     b.lut = null;
     const order = b.focus ? [b.focus, ...items.filter(x => x !== b.focus)] : items;
