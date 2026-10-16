@@ -49,6 +49,7 @@
   .btn { background: #2d2f36; border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; cursor: pointer; transition: .15s; }
   .btn:hover:not(:disabled) { border-color: var(--accent); }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.on { border-color: var(--accent); color: var(--accent); }
   .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #1a1205; border: 0; font-weight: 600; }
   .btn.wide { width: 100%; margin-top: 8px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -60,6 +61,9 @@
   .prog > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s; }
   main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .stage { flex: 1; position: relative; display: grid; place-items: center; overflow: hidden; padding: 20px; outline: none; min-height: 0; }
+  .stage.pixel { display: block; overflow: auto; }
+  .stage.pixel .viewer { margin: 8px auto; }
+  .row input[type=range]:disabled { opacity: .4; }
   .viewer { position: relative; line-height: 0; user-select: none; touch-action: none; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
   .viewer canvas { display: block; }
   #cvOrig { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -99,7 +103,7 @@
 <div class="app">
   <aside>
     <div class="head"><h1>AI 色彩匹配 · 本地版</h1><button class="link" id="helpBtn">使用说明</button></div>
-    <div class="sub">v2.3 · 把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
+    <div class="sub">v2.4 · 把参考图的色调套到你的照片上。图片不上传，全部在本机计算。</div>
     <div class="tabs"><button id="tabSingle" class="on">单张调色</button><button id="tabBatch">批量调色</button></div>
 
     <div class="card" data-mode="single">
@@ -152,6 +156,11 @@
       <div class="row"><label>强度</label><input id="amount" type="range" min="0" max="100" value="60" /><span class="val" id="amountVal">60%</span></div>
       <div class="row"><label>亮度跟随</label><input id="lum" type="range" min="0" max="100" value="50" /><span class="val" id="lumVal">50%</span></div>
       <p class="hint" id="adjHint">亮度跟随 0% = 只换色调、保留原图明暗；100% = 明暗也跟参考图走。默认值按 Polarr 官方 50 组示例校准。</p>
+      <div class="row"><label>颗粒</label><input id="grain" type="range" min="0" max="100" value="0" /><span class="val" id="grainVal">0</span></div>
+      <div class="row"><label>大小</label><input id="grainSize" type="range" min="0" max="100" value="25" disabled /><span class="val" id="grainSizeVal">25</span></div>
+      <div class="row"><label>粗糙度</label><input id="grainRough" type="range" min="0" max="100" value="50" disabled /><span class="val" id="grainRoughVal">50</span></div>
+      <div class="row"><label>柔光</label><input id="glow" type="range" min="0" max="100" value="0" /><span class="val" id="glowVal">0</span></div>
+      <p class="hint">颗粒对照 Camera Raw：数量、大小、粗糙度，默认大小 25、粗糙度 50。缩小看会变淡，点右下角「100%」看颗粒。柔光是先模糊再叠回去，高光会轻轻晕开。这两项只进导出的图片，不写进 LUT。</p>
     </div>
 
     <div class="card">
@@ -213,6 +222,7 @@
     <div class="bar">
       <span id="status">准备就绪</span><span class="sp"></span>
       <span id="barHint">拖动中线对比 · ← → 微调 · 按住空格看原图</span>
+      <button class="btn" id="view100" type="button" title="按像素 1:1 查看，看颗粒用">100%</button>
     </div>
   </main>
 </div>
@@ -237,6 +247,7 @@
   <h4>小贴士</h4>
   <ul>
     <li>亮度跟随 0% = 只换色调、保留原图明暗；100% = 明暗也跟参考图。</li>
+    <li>颗粒对照 Camera Raw 滤镜（数量、大小、粗糙度）。柔光是先模糊再叠回去，高光会轻轻晕开。点右下角「100%」看颗粒。这两项只出现在导出的图片里。</li>
     <li>参考图的明度 / 色相 / 色调只改匹配用的那张参考，缩略图会跟着变，原文件不动。导入的 .cube 不能调这三项。</li>
     <li>内容差别很大的两张图，用「线性匹配」最稳，不会出怪色。</li>
     <li>HEIC / TIFF 只有 Safari 能打开，Chrome 里请先转成 JPG。</li>
@@ -687,25 +698,178 @@ class LutRenderer {
         vec3 q = c.bgr * ((n - 1.0) / n) + 0.5 / n;
         o = vec4(texture(lut, q).rgb, opaque ? 1.0 : c.a);
       }`;
+    const copyFs = `#version 300 es
+      precision highp float;
+      uniform sampler2D tex; in vec2 uv; out vec4 o;
+      void main() { o = texture(tex, uv); }`;
+    const blurFs = `#version 300 es
+      precision highp float;
+      uniform sampler2D tex; uniform vec2 dir; in vec2 uv; out vec4 o;
+      void main() {
+        vec3 c = texture(tex, uv).rgb * 0.227027;
+        c += texture(tex, uv + dir * 1.0).rgb * 0.1945946;
+        c += texture(tex, uv - dir * 1.0).rgb * 0.1945946;
+        c += texture(tex, uv + dir * 2.0).rgb * 0.1216216;
+        c += texture(tex, uv - dir * 2.0).rgb * 0.1216216;
+        c += texture(tex, uv + dir * 3.0).rgb * 0.054054;
+        c += texture(tex, uv - dir * 3.0).rgb * 0.054054;
+        c += texture(tex, uv + dir * 4.0).rgb * 0.016216;
+        c += texture(tex, uv - dir * 4.0).rgb * 0.016216;
+        o = vec4(c, 1.0);
+      }`;
+    const finishFs = `#version 300 es
+      precision highp float;
+      uniform sampler2D base; uniform sampler2D blurTex; uniform bool useBlur;
+      uniform float glow; uniform float grainAmt; uniform float grainSize; uniform float grainRough;
+      uniform vec2 origin; uniform vec2 fullSize; uniform vec2 bufSize; uniform bool opaque;
+      in vec2 uv; out vec4 o;
+      float hash(vec2 p) {
+        vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i), b = hash(i + vec2(1.0, 0.0)), c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+      vec3 softlight(vec3 B, vec3 S) {
+        vec3 lo = B - (1.0 - 2.0 * S) * B * (1.0 - B);
+        vec3 D = mix(((16.0 * B - 12.0) * B + 4.0) * B, sqrt(max(B, 0.0)), step(0.25, B));
+        vec3 hi = B + (2.0 * S - 1.0) * (D - B);
+        return mix(lo, hi, step(0.5, S));
+      }
+      void main() {
+        vec4 src = texture(base, uv);
+        vec3 col = src.rgb;
+        if (useBlur && glow > 0.001) {
+          vec3 bl = texture(blurTex, uv).rgb;
+          vec3 sl = softlight(col, bl);
+          vec3 bloom = 1.0 - (1.0 - col) * (1.0 - bl);
+          col = mix(col, mix(sl, bloom, 0.65), glow);
+        }
+        if (grainAmt > 0.1) {
+          float diag = length(fullSize);
+          float cell = max(0.5, (0.55 + pow(grainSize / 100.0, 1.35) * 10.0) * (diag / 4000.0));
+          vec2 g = vec2(origin.x + gl_FragCoord.x, origin.y + bufSize.y - gl_FragCoord.y);
+          float t = grainRough / 100.0;
+          float n = mix(vnoise(g / cell), vnoise(g / (cell * 4.0)), t);
+          n = n * 2.0 - 1.0;
+          float amp = pow(grainAmt / 50.0, 2.0) * 0.16;
+          float y = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          float fade = clamp(min(y, 1.0 - y) / 0.05, 0.0, 1.0);
+          col += n * amp * fade;
+        }
+        o = vec4(clamp(col, 0.0, 1.0), opaque ? 1.0 : src.a);
+      }`;
     const sh = (type, src) => {
       const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
       return s;
     };
-    const prog = gl.createProgram();
-    gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
-    gl.useProgram(prog);
+    const prog = (fsSrc) => {
+      const p = gl.createProgram();
+      gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsSrc));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+      return p;
+    };
+    this.prog = prog(fs); this.copyProg = prog(copyFs); this.blurProg = prog(blurFs); this.finishProg = prog(finishFs);
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    for (const p of [this.prog, this.copyProg, this.blurProg, this.finishProg]) {
+      gl.useProgram(p);
+      const loc = gl.getAttribLocation(p, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    }
     this.imgTex = gl.createTexture(); this.lutTex = gl.createTexture();
-    gl.uniform1i(gl.getUniformLocation(prog, 'img'), 0); gl.uniform1i(gl.getUniformLocation(prog, 'lut'), 1);
-    this.uN = gl.getUniformLocation(prog, 'n'); this.uOpaque = gl.getUniformLocation(prog, 'opaque');
+    gl.useProgram(this.prog);
+    gl.uniform1i(gl.getUniformLocation(this.prog, 'img'), 0); gl.uniform1i(gl.getUniformLocation(this.prog, 'lut'), 1);
+    this.uN = gl.getUniformLocation(this.prog, 'n'); this.uOpaque = gl.getUniformLocation(this.prog, 'opaque');
+    gl.useProgram(this.copyProg); gl.uniform1i(gl.getUniformLocation(this.copyProg, 'tex'), 0);
+    gl.useProgram(this.blurProg); gl.uniform1i(gl.getUniformLocation(this.blurProg, 'tex'), 0);
+    this.uBlurDir = gl.getUniformLocation(this.blurProg, 'dir');
+    gl.useProgram(this.finishProg);
+    gl.uniform1i(gl.getUniformLocation(this.finishProg, 'base'), 0);
+    gl.uniform1i(gl.getUniformLocation(this.finishProg, 'blurTex'), 2);
+    this.uUseBlur = gl.getUniformLocation(this.finishProg, 'useBlur');
+    this.uGlow = gl.getUniformLocation(this.finishProg, 'glow');
+    this.uGrain = gl.getUniformLocation(this.finishProg, 'grainAmt');
+    this.uGrainSize = gl.getUniformLocation(this.finishProg, 'grainSize');
+    this.uGrainRough = gl.getUniformLocation(this.finishProg, 'grainRough');
+    this.uOrigin = gl.getUniformLocation(this.finishProg, 'origin');
+    this.uFull = gl.getUniformLocation(this.finishProg, 'fullSize');
+    this.uBuf = gl.getUniformLocation(this.finishProg, 'bufSize');
+    this.uFinOpaque = gl.getUniformLocation(this.finishProg, 'opaque');
+    this.fbos = new Map();
+    this.finish = { grain: 0, grainSize: 25, grainRough: 50, glow: 0, fullW: 1, fullH: 1, ox: 0, oy: 0 };
     this.maxSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     canvas.addEventListener('webglcontextlost', () => toast('显卡渲染被系统中断了，请刷新页面（照片很多时可以分几批处理）', true, 10000));
     this.setLut(identityLut());
+  }
+  target(key, w, h) {
+    const gl = this.gl;
+    let t = this.fbos.get(key);
+    if (t && t.w === w && t.h === h) return t;
+    if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+      gl.texParameteri(gl.TEXTURE_2D, k, v);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    t = { tex, fb, w, h };
+    this.fbos.set(key, t);
+    return t;
+  }
+  draw() { this.gl.drawArrays(this.gl.TRIANGLE_STRIP, 0, 4); }
+  blit(tex, dst) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0, 0, dst.w, dst.h);
+    gl.useProgram(this.copyProg);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    this.draw();
+  }
+  blurPass(tex, dst, horizontal, step) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0, 0, dst.w, dst.h);
+    gl.useProgram(this.blurProg);
+    gl.uniform2f(this.uBlurDir, horizontal ? step / dst.w : 0, horizontal ? 0 : step / dst.h);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    this.draw();
+  }
+  // 大半径先缩小再模糊再放大，效果接近高斯模糊
+  blurTexture(srcTex, sw, sh, sigma) {
+    let tex = srcTex, w = sw, h = sh, s = sigma, level = 0;
+    const stack = [];
+    while (s > 8 && w > 8 && h > 8 && level < 6) {
+      const nw = Math.max(1, w >> 1), nh = Math.max(1, h >> 1);
+      const dst = this.target('ds' + level, nw, nh);
+      this.blit(tex, dst);
+      stack.push({ w, h });
+      tex = dst.tex; w = nw; h = nh; s *= 0.5; level++;
+    }
+    const step = Math.max(1, Math.min(4, s / 2));
+    const a = this.target('ba', w, h), b = this.target('bb', w, h);
+    this.blurPass(tex, a, true, step);
+    this.blurPass(a.tex, b, false, step);
+    tex = b.tex;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const dst = this.target('up' + i, stack[i].w, stack[i].h);
+      this.blit(tex, dst);
+      tex = dst.tex;
+    }
+    return tex;
+  }
+  setFinish(f, fullW, fullH, ox = 0, oy = 0) {
+    this.finish = {
+      grain: f?.grain || 0, grainSize: f?.grainSize ?? 25, grainRough: f?.grainRough ?? 50, glow: f?.glow || 0,
+      fullW: fullW || 1, fullH: fullH || 1, ox, oy,
+    };
   }
   setImage(src) {
     const gl = this.gl;
@@ -729,10 +893,34 @@ class LutRenderer {
     this.n = n; this.lastLut = lut;
   }
   render(opaque = false) {
-    const gl = this.gl;
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    const gl = this.gl, w = this.canvas.width, h = this.canvas.height;
+    const fin = this.finish || {}, on = (fin.grain > 0 || fin.glow > 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, on ? this.target('color', w, h).fb : null);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.prog);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.imgTex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_3D, this.lutTex);
     gl.uniform1f(this.uN, this.n); gl.uniform1i(this.uOpaque, opaque ? 1 : 0);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    this.draw();
+    if (!on) return;
+    const sigma = (fin.glow / 100) * 0.08 * Math.min(fin.fullW || w, fin.fullH || h);
+    let blurTex = null;
+    if (fin.glow > 0 && sigma >= 0.4) blurTex = this.blurTexture(this.target('color', w, h).tex, w, h, sigma);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.finishProg);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.target('color', w, h).tex);
+    gl.uniform1i(this.uUseBlur, blurTex ? 1 : 0);
+    if (blurTex) { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, blurTex); }
+    gl.uniform1f(this.uGlow, (fin.glow || 0) / 100);
+    gl.uniform1f(this.uGrain, fin.grain || 0);
+    gl.uniform1f(this.uGrainSize, fin.grainSize ?? 25);
+    gl.uniform1f(this.uGrainRough, fin.grainRough ?? 50);
+    gl.uniform2f(this.uOrigin, fin.ox || 0, fin.oy || 0);
+    gl.uniform2f(this.uFull, fin.fullW || w, fin.fullH || h);
+    gl.uniform2f(this.uBuf, w, h);
+    gl.uniform1i(this.uFinOpaque, opaque ? 1 : 0);
+    this.draw();
   }
 }
 
@@ -828,13 +1016,23 @@ function viewerShow(bmp) {
   const oc = $('cvOrig'); oc.width = bmp.width; oc.height = bmp.height; oc.getContext('2d').drawImage(bmp, 0, 0);
   layoutViewer();
 }
+const finishNow = () => ({
+  grain: +$('grain').value, grainSize: +$('grainSize').value, grainRough: +$('grainRough').value, glow: +$('glow').value,
+});
+function applyRendererFinish(renderer, w, h, ox = 0, oy = 0) {
+  renderer.setFinish(finishNow(), w, h, ox, oy);
+}
 function viewerLut(lut, label) {
-  viewR.setLut(lut || identityLut()); viewR.render(); $('tagR').textContent = label;
+  const v = state.view;
+  viewR.setLut(lut || identityLut());
+  if (v) applyRendererFinish(viewR, v.width, v.height);
+  viewR.render(); $('tagR').textContent = label;
 }
 function layoutViewer() {
   const v = state.view; if (!v || !v.width) return;
   const st = $('stage'), pad = 40, top = state.mode === 'batch' ? 44 : 0;
-  const s = Math.min((st.clientWidth - pad) / v.width, (st.clientHeight - pad - top) / v.height);
+  st.classList.toggle('pixel', !!state.pixelView);
+  const s = state.pixelView ? 1 : Math.min((st.clientWidth - pad) / v.width, (st.clientHeight - pad - top) / v.height);
   const w = Math.max(50, Math.floor(v.width * s)), h = Math.max(50, Math.floor(v.height * s));
   $('cvOut').style.width = w + 'px'; $('cvOut').style.height = h + 'px';
   setSplit(state.split);
@@ -984,10 +1182,39 @@ for (const id of ['refLight', 'refHue', 'refTint']) {
   $(id).oninput = applyRefTune;
   $(id).ondblclick = () => { $(id).value = 0; applyRefTune(); };
 }
+function syncFinishUI() {
+  const f = finishNow();
+  $('grainVal').textContent = f.grain;
+  $('grainSizeVal').textContent = f.grainSize;
+  $('grainRoughVal').textContent = f.grainRough;
+  $('glowVal').textContent = f.glow;
+  const off = f.grain <= 0;
+  $('grainSize').disabled = $('grainRough').disabled = off;
+}
+function repaintFinish() {
+  syncFinishUI();
+  if (state.mode === 'single') { if (state.view) viewerLut(state.lut, $('tagR').textContent); return; }
+  const b = state.batch;
+  if (b.focusBmp) viewerLut(b.focus ? (b.focus.lut || b.lut) : b.lut, $('tagR').textContent);
+  for (const it of b.items) drawTile(it);
+}
+for (const id of ['grain', 'grainSize', 'grainRough', 'glow']) {
+  $(id).oninput = repaintFinish;
+  $(id).ondblclick = () => {
+    $(id).value = id === 'grainSize' ? 25 : id === 'grainRough' ? 50 : 0;
+    repaintFinish();
+  };
+}
+$('view100').onclick = () => {
+  state.pixelView = !state.pixelView;
+  $('view100').classList.toggle('on', !!state.pixelView);
+  layoutViewer();
+};
 $('resetBtn').onclick = () => {
   state.params[kind()] = { ...DEFAULTS[kind()] };
   if (kind() === 'image') { state.method = 'smart'; $('method').value = 'smart'; }
-  syncAdjUI(); refresh();
+  $('grain').value = 0; $('grainSize').value = 25; $('grainRough').value = 50; $('glow').value = 0;
+  syncAdjUI(); syncFinishUI(); refresh();
 };
 document.querySelectorAll('input[name=bmode]').forEach(r => r.onchange = () => { state.batch.mode = r.value; refresh(); });
 
@@ -1098,8 +1325,11 @@ function setTileStatus(it, text, err = false) {
 }
 function drawTile(it) {
   const ctx = it.cv.getContext('2d');
-  if (!it.lut) { ctx.drawImage(it.thumb, 0, 0); return; }
-  thumbR.setImage(it.thumb); thumbR.setLut(it.lut); thumbR.render();
+  const f = finishNow();
+  if (!it.lut && !(f.grain > 0 || f.glow > 0)) { ctx.drawImage(it.thumb, 0, 0); return; }
+  thumbR.setImage(it.thumb); thumbR.setLut(it.lut || identityLut());
+  applyRendererFinish(thumbR, it.thumb.width, it.thumb.height);
+  thumbR.render();
   ctx.drawImage(thumbR.canvas, 0, 0);
 }
 async function removeItem(it) {
@@ -1261,18 +1491,25 @@ async function renderFullRes(file, lut, type) {
   try {
     if (!ctx) throw new Error('导出失败：图片太大或内存不足');
     exportR.setLut(lut);
-    let T = Math.min(4096, exportR.maxSize);
+    const fin = finishNow();
+    const sigma = (fin.glow / 100) * 0.08 * Math.min(W, H);
+    const pad = fin.glow > 0 ? Math.ceil(sigma * 3) : 0;
+    let T = Math.min(4096, exportR.maxSize - pad * 2);
+    if (T < 256) T = Math.min(4096, exportR.maxSize);
     tiles: for (;;) {
       for (let y = 0; y < H; y += T) for (let x = 0; x < W; x += T) {
         const w = Math.min(T, W - x), h = Math.min(T, H - y);
-        const tile = await cropBitmap(bmp, x, y, w, h);
+        const x0 = Math.max(0, x - pad), y0 = Math.max(0, y - pad);
+        const x1 = Math.min(W, x + w + pad), y1 = Math.min(H, y + h + pad);
+        const tile = await cropBitmap(bmp, x0, y0, x1 - x0, y1 - y0);
         exportR.setImage(tile); tile.close();
-        if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) {
+        exportR.setFinish(fin, W, H, x0, y0);
+        if (gl.drawingBufferWidth < x1 - x0 || gl.drawingBufferHeight < y1 - y0) {
           if (T <= 512) throw new Error('导出失败：显卡内存不足，请关掉其他网页后重试');
           T >>= 1; ctx.clearRect(0, 0, W, H); continue tiles;
         }
         exportR.render(opaque);
-        ctx.drawImage(exportR.canvas, 0, 0, w, h, x, y, w, h);
+        ctx.drawImage(exportR.canvas, x - x0, y - y0, w, h, x, y, w, h);
       }
       break;
     }
